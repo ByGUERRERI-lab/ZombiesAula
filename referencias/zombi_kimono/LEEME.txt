@@ -1,0 +1,9 @@
+Zombi del kimono para Godot 4
+
+1. Descomprime y arrastra zombi_kimono.glb a la carpeta del proyecto.
+2. Arrastra el modelo a tu escena. Mide unos 2,4 m y mira hacia +Z.
+3. Animaciones (en el AnimationPlayer del modelo): "Quieto" (en bucle) y "Vomitar".
+   Ejemplo: $ZombiKimono/AnimationPlayer.play("Vomitar")
+4. Para que "Quieto" se repita: en la pestaña Import del .glb, Animation > Quieto > Loop Mode = Linear, y Reimport.
+
+El chorro de vómito no va dentro del modelo: en Godot se hace con un GPUParticles3D en la boca (nodo Cabeza).

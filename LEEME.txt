@@ -1,0 +1,14 @@
+﻿Zombies en el Aula: qué hay en cada carpeta
+
+project.godot, main.tscn   proyecto de Godot y escena principal
+scripts/nucleo/            arranque, red, utilidades, gráficos y cámara libre
+scripts/interfaz/          menús, HUD y pantallas
+scripts/jugador/           jugador, modelos de personajes, armas y objetos
+scripts/enemigos/          enemigos, Xavier y sustos
+scripts/mapas/             CESUR, casino, tienda, Mojácar/Indalo y misiones
+modelos/                   modelos 3D y texturas del juego
+sonidos/                   audio del juego
+juan/                      fotos y audios nuevos para añadir al juego
+referencias/               material de consulta, el juego no lo usa
+backups/                   copias de seguridad antiguas
+.godot/                    caché de Godot, se regenera sola

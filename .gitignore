@@ -1,0 +1,16 @@
+# Godot 4 - archivos generados automáticamente
+.godot/
+
+# Exportaciones
+export/
+exports/
+
+# Archivos de sistema
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Backups
+backups/
+*.bak
+*.tmp

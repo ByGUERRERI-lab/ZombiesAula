@@ -1,17 +1,47 @@
 extends "res://scripts/mapas/mission.gd"
-# INVESTIGA: has "escapado" de CESUR y te despiertas en un sitio que no conoces
-# (Mojácar, el Hotel Pueblo Indalo...). Mientras siguen llegando oleadas:
-#  1. Busca las pistas del mapa (los "?" solo se ven de cerca).
+# ESCAPA DEL BUCLE: has "escapado" de CESUR y te despiertas en un sitio que no
+# conoces (Mojácar, el Hotel Pueblo Indalo...). Mientras siguen llegando oleadas:
+#  1. Supera las PRUEBAS DE HABILIDAD del mapa (los "!" solo se ven de cerca).
+#     Cada prueba es un minijuego distinto:
+#       · Puntería      dispara a 6 de las 8 dianas antes de que se escondan
+#       · Memoria       repite con las flechas la secuencia de luces (3 rondas)
+#       · Reflejos      pulsa la flecha que salga a tiempo, 8 seguidas
+#       · Aguante       quédate 25 s dentro del círculo mientras te atacan
+#       · Contrarreloj  pasa por los 5 puntos antes de que se acabe el tiempo
+#     Al superarla descubres lo que no cuadra de ese sitio (el texto de la pista).
+#     Si fallas, vuelve al "!" y repítela.
 #  2. Con todas, aparece la puerta del aula donde no debería haber ninguna puerta.
 #  3. La cruzas... y apareces en el siguiente sitio del bucle.
-# Usa la interfaz y los sonidos de mission.gd; las pistas vienen de mapas.gd.
+# Usa la interfaz y los sonidos de mission.gd; los sitios y los textos vienen de mapas.gd.
 
-const NEAR_MARK := 16.0      # a qué distancia se ve el "?" de una pista
-const READ_TIME := 9.0       # segundos que se queda el texto de una pista
+const NEAR_MARK := 16.0      # a qué distancia se ve el "!" de una prueba
+const READ_TIME := 9.0       # segundos que se queda el texto al superar una prueba
+
+# Qué prueba hay en cada sitio (si un sitio no está aquí, se reparten en orden)
+const TIPO_DE := {"senal": "dianas", "mesas": "memoria", "taquillas": "reflejos", "radio": "aguante", "fin": "carrera",
+	"registro": "reflejos", "sillas": "dianas", "llave": "memoria", "tenis": "carrera", "buffet": "aguante"}
+const TIPOS := ["dianas", "memoria", "reflejos", "aguante", "carrera"]
+const NOMBRE_TIPO := {"dianas": "Puntería", "memoria": "Memoria", "reflejos": "Reflejos", "aguante": "Aguante", "carrera": "Contrarreloj"}
+const REGLA := {
+	"dianas": "Dispara a 6 de las 8 dianas antes de que se escondan",
+	"memoria": "Mira la secuencia de luces y repítela con las flechas (3 rondas)",
+	"reflejos": "Pulsa la flecha que salga en pantalla a tiempo. 8 seguidas",
+	"aguante": "Quédate 25 segundos dentro del círculo. Vienen a por ti",
+	"carrera": "Pasa por los 5 puntos antes de que se acabe el tiempo",
+}
+const FLECHAS := ["←", "↑", "↓", "→"]
+const TECLAS := [KEY_LEFT, KEY_UP, KEY_DOWN, KEY_RIGHT]
+const COLORES := [Color(1.0, 0.25, 0.2), Color(0.25, 1.0, 0.35), Color(0.3, 0.55, 1.0), Color(1.0, 0.85, 0.2)]
+const DIANAS := 8
+const DIANAS_OK := 6
+const AGUANTE_T := 25.0
+const AGUANTE_R := 3.5
+const REFLEJOS_N := 8
 
 var mapa                     # mapas.gd
 var found := {}
 var glints := {}
+var tipo := {}               # id del sitio -> tipo de prueba
 var door: Node3D
 var door_marker: Label3D
 var reader: PanelContainer
@@ -19,22 +49,39 @@ var read_title: Label
 var read_text: Label
 var read_tw: Tween
 
+# prueba en curso (solo en el PC de quien la está haciendo)
+var reto := ""               # id del sitio ("" = ninguna)
+var reto_tipo := ""
+var reto_pos := Vector3.ZERO
+var rt := 0.0                # tiempo dentro de la prueba
+var r := {}                  # estado propio de cada prueba
+var reto_nodes: Array = []
+var flecha_prev := [false, false, false, false]
+var big_lbl: Label           # flechas y avisos grandes en el centro
+var snd_ok: AudioStreamPlayer
+var snd_mal: AudioStreamPlayer
+var snd_tonos: Array = []
+
 
 func _ready() -> void:
 	mapa = game.mapa
 	_build_ui()
 	_build_sounds()
 	_build_reader()
+	_build_reto_ui()
+	var i := 0
 	for p in mapa.pistas:
 		found[p[0]] = false
-		glints[p[0]] = _glint(p[3] + Vector3(0, 1.1, 0))
-		markers[p[0]] = _marker(p[3] + Vector3(0, 1.7, 0), Color(0.55, 0.85, 1.0), "?")
+		tipo[p[0]] = TIPO_DE.get(p[0], TIPOS[i % TIPOS.size()])
+		glints[p[0]] = _glint(p[3] + Vector3(0, 1.1, 0), COLORES[i % COLORES.size()])
+		markers[p[0]] = _marker(p[3] + Vector3(0, 1.7, 0), Color(1.0, 0.85, 0.3), "!")
 		markers[p[0]].visible = false
+		i += 1
 	door = MapasScript.puerta_aula(self, mapa.puerta_pos, mapa.puerta_yaw)
 	door.visible = false
 	markers["door"] = _marker(mapa.puerta_pos + Vector3(0, 3.3, 0), Color(0.3, 1.0, 0.4), "LA PUERTA DEL AULA")
 	markers["door"].visible = false
-	brief.text = mapa.intro
+	brief.text = mapa.intro.replace("Investiga.", "") + "\nSupera las pruebas de habilidad de los «!» para descubrir qué está pasando."
 	brief.add_theme_color_override("font_color", Color(0.95, 0.92, 0.8))
 	var tw := create_tween()
 	tw.tween_interval(8.0)
@@ -49,6 +96,8 @@ func _process(delta: float) -> void:
 	if stage == 3 or player.dead:
 		prompt.text = ""
 		bar.visible = false
+		if reto != "":
+			_cancelar()
 		return
 	elapsed += delta
 	for id in glints:
@@ -62,12 +111,16 @@ func _process(delta: float) -> void:
 	prompt.text = ""
 	bar.visible = false
 	if stage == 0:
-		for p in mapa.pistas:
-			if not found[p[0]] and _dist(p[3]) < 2.2:
-				prompt.text = "[E] Investigar: %s" % p[1]
-				if e_down:
-					_send_inv("pista", p[0])
-				break
+		if reto != "":
+			_reto_update(delta)
+		else:
+			for p in mapa.pistas:
+				if not found[p[0]] and _dist(p[3]) < 2.2:
+					var tp: String = tipo[p[0]]
+					prompt.text = "[E] Prueba de %s: %s  ·  %s" % [NOMBRE_TIPO[tp], p[1], REGLA[tp]]
+					if e_down:
+						_empezar(p)
+					break
 	elif stage == 1:
 		if _dist(mapa.puerta_pos) < 2.2:
 			prompt.text = "Mantén [E] para abrir la puerta del aula"
@@ -95,22 +148,453 @@ func _update_inv() -> void:
 		else:
 			nearest = minf(nearest, _dist(p[3]))
 	if stage == 0:
-		s += "○  Pistas: %d / %d" % [n, mapa.pistas.size()]
-		if nearest < INF:
+		if reto != "":
+			s += "▶  %s: %s\n" % [NOMBRE_TIPO[reto_tipo], _estado_reto()]
+		s += "○  Pruebas: %d / %d" % [n, mapa.pistas.size()]
+		if nearest < INF and reto == "":
 			s += "\n     la más cercana a %d m" % int(nearest)
 	else:
 		s += "○  Cruza la puerta del aula · %d m" % int(_dist(mapa.puerta_pos))
 	obj_lbl.text = s
 	for p in mapa.pistas:
 		var m: Label3D = markers[p[0]]
-		m.visible = not found[p[0]] and _dist(p[3]) < NEAR_MARK
+		m.visible = not found[p[0]] and _dist(p[3]) < NEAR_MARK and reto != p[0]
 		if m.visible:
-			m.text = "?\n%d m" % int(_dist(p[3]))
+			m.text = "!\n%s\n%d m" % [NOMBRE_TIPO[tipo[p[0]]].to_upper(), int(_dist(p[3]))]
 	if markers["door"].visible:
 		markers["door"].text = "LA PUERTA DEL AULA\n%d m" % int(_dist(mapa.puerta_pos))
 
 
-# ---------------- Pasos (en red se aplican en todos los PCs) ----------------
+# =============================================================
+# Pruebas de habilidad
+# =============================================================
+func _empezar(p: Array) -> void:
+	reto = p[0]
+	reto_tipo = tipo[reto]
+	reto_pos = p[3]
+	rt = 0.0
+	r = {}
+	flecha_prev = [true, true, true, true]
+	_say("PRUEBA DE %s\n%s" % [NOMBRE_TIPO[reto_tipo].to_upper(), REGLA[reto_tipo]], Color(1.0, 0.85, 0.3))
+	snd_pick.play()
+	match reto_tipo:
+		"dianas":
+			r = {"n": 0, "aciertos": 0, "fallos": 0, "next": 1.2, "vivas": []}
+		"memoria":
+			r = {"ronda": 0, "seq": [], "fase": "espera", "ft": 1.0, "i": 0}
+			_memoria_lamparas()
+		"reflejos":
+			r = {"n": 0, "flecha": -1, "ft": 1.0, "lim": 1.2}
+		"aguante":
+			r = {"p": 0.0, "spawn": 1.0}
+			_aguante_circulo()
+		"carrera":
+			_carrera_ruta()
+
+
+func _reto_update(delta: float) -> void:
+	rt += delta
+	if player.downed:
+		_fallar("Te han tumbado")
+		return
+	var pulsada := _flecha_pulsada()
+	match reto_tipo:
+		"dianas":
+			_dianas_update(delta)
+		"memoria":
+			_memoria_update(delta, pulsada)
+		"reflejos":
+			_reflejos_update(delta, pulsada)
+		"aguante":
+			_aguante_update(delta)
+		"carrera":
+			_carrera_update(delta)
+
+
+func _estado_reto() -> String:
+	match reto_tipo:
+		"dianas":
+			return "%d / %d dianas" % [r.get("aciertos", 0), DIANAS_OK]
+		"memoria":
+			return "ronda %d / 3" % (r.get("ronda", 0) + 1)
+		"reflejos":
+			return "%d / %d" % [r.get("n", 0), REFLEJOS_N]
+		"aguante":
+			return "%d / %d s" % [int(r.get("p", 0.0)), int(AGUANTE_T)]
+		"carrera":
+			return "punto %d / %d" % [r.get("i", 0) + 1, r.get("pts", []).size()]
+	return ""
+
+
+# Devuelve la flecha que acabas de pulsar (0..3) o -1
+func _flecha_pulsada() -> int:
+	var res := -1
+	for i in 4:
+		var on: bool = Input.is_key_pressed(TECLAS[i]) and not player.input_blocked
+		if on and not flecha_prev[i]:
+			res = i
+		flecha_prev[i] = on
+	return res
+
+
+func _superar() -> void:
+	var id := reto
+	_limpiar()
+	snd_ok.play()
+	_send_inv("pista", id)
+
+
+func _fallar(por: String) -> void:
+	_limpiar()
+	snd_mal.play()
+	red_rect.color.a = 0.35
+	red_rect.create_tween().tween_property(red_rect, "color:a", 0.0, 0.6)
+	_say("¡PRUEBA FALLADA!\n%s. Vuelve al «!» para intentarlo otra vez." % por, Color(1.0, 0.35, 0.3))
+
+
+func _cancelar() -> void:
+	_limpiar()
+
+
+func _limpiar() -> void:
+	reto = ""
+	reto_tipo = ""
+	for n in reto_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	reto_nodes.clear()
+	r = {}
+	big_lbl.text = ""
+	timer_lbl.visible = false
+
+
+# ---------------- Puntería ----------------
+func _dianas_update(delta: float) -> void:
+	r["next"] -= delta
+	if r["n"] < DIANAS and r["next"] <= 0.0:
+		r["next"] = 1.25
+		r["n"] += 1
+		var d := Diana.new()
+		d.pos_ok = _punto_diana()
+		d.vida = 2.7
+		d.reto = self
+		add_child(d)
+		d.global_position = d.pos_ok
+		reto_nodes.append(d)
+	# se acaba cuando ya han salido todas y no queda ninguna
+	var quedan := 0
+	for n in reto_nodes:
+		if is_instance_valid(n) and not n.is_queued_for_deletion():
+			quedan += 1
+	big_lbl.text = "%d / %d" % [r["aciertos"], DIANAS_OK]
+	big_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	if r["aciertos"] >= DIANAS_OK:
+		_superar()
+	elif r["n"] >= DIANAS and quedan == 0:
+		_fallar("Solo has dado a %d de %d dianas" % [r["aciertos"], DIANAS_OK])
+
+
+func diana_tocada(d) -> void:
+	if reto_tipo != "dianas":
+		return
+	r["aciertos"] += 1
+	snd_tonos[r["aciertos"] % 4].play()
+
+
+# Un punto al aire libre: en el camino entre la prueba y otro sitio conocido del mapa
+func _punto_diana() -> Vector3:
+	var cand: Array = []
+	for q in _sitios():
+		var dd: float = Vector2(q.x - reto_pos.x, q.z - reto_pos.z).length()
+		if dd > 6.0 and dd < 30.0:
+			cand.append(q)
+	var a: Vector3 = player.global_position
+	var b: Vector3 = cand.pick_random() if cand.size() > 0 else reto_pos + Vector3(randf_range(-8, 8), 0, randf_range(-8, 8))
+	var k := randf_range(0.35, 0.8)
+	var p := a.lerp(b, k)
+	p += Vector3(randf_range(-1.5, 1.5), 0.0, randf_range(-1.5, 1.5))
+	p = U.clamp_pos(p, 0.6)
+	p.y = randf_range(1.2, 2.8)
+	return p
+
+
+# ---------------- Memoria ----------------
+func _memoria_lamparas() -> void:
+	var lado := Vector3(1, 0, 0)
+	var to_p: Vector3 = player.global_position - reto_pos
+	to_p.y = 0.0
+	if to_p.length() > 0.1:
+		lado = to_p.normalized().cross(Vector3.UP)
+	r["lamps"] = []
+	for i in 4:
+		var n := Node3D.new()
+		add_child(n)
+		n.global_position = reto_pos + Vector3(0, 2.4, 0) + lado * (i - 1.5) * 0.9
+		var s := U.sphere(n, 0.28, Vector3.ZERO, COLORES[i], true)
+		s.material_override.emission_energy_multiplier = 0.15
+		var l := Label3D.new()
+		l.text = FLECHAS[i]
+		l.font_size = 64
+		l.pixel_size = 0.004
+		l.outline_size = 8
+		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		l.position.y = -0.55
+		n.add_child(l)
+		reto_nodes.append(n)
+	r["lamps_mesh"] = []
+	for n in reto_nodes:
+		r["lamps_mesh"].append(n.get_child(0))
+
+
+func _lampara(i: int, on: bool) -> void:
+	var m: MeshInstance3D = r["lamps_mesh"][i]
+	m.material_override.emission_energy_multiplier = 4.0 if on else 0.15
+	m.scale = Vector3.ONE * (1.25 if on else 1.0)
+
+
+func _memoria_update(delta: float, pulsada: int) -> void:
+	if not r.has("lamps"):
+		_memoria_lamparas()
+	r["ft"] -= delta
+	match r["fase"]:
+		"espera":          # pausa antes de enseñar la ronda
+			big_lbl.text = "MIRA..."
+			if r["ft"] <= 0.0:
+				r["seq"].append(randi() % 4)
+				if r["seq"].size() < 3 + r["ronda"]:
+					r["ft"] = 0.0
+					return
+				r["fase"] = "muestra"
+				r["i"] = 0
+				r["ft"] = 0.3
+		"muestra":         # se encienden de una en una
+			if r["ft"] <= 0.0:
+				var k: int = r["i"]
+				if k >= r["seq"].size() * 2:
+					r["fase"] = "turno"
+					r["i"] = 0
+					r["ft"] = 0.0
+					return
+				var idx: int = r["seq"][k / 2]
+				_lampara(idx, k % 2 == 0)
+				if k % 2 == 0:
+					snd_tonos[idx].play()
+				r["ft"] = 0.5 if k % 2 == 0 else 0.22
+				r["i"] = k + 1
+		"turno":
+			big_lbl.text = "TU TURNO  %d / %d" % [r["i"], r["seq"].size()]
+			if pulsada >= 0:
+				_lampara(pulsada, true)
+				snd_tonos[pulsada].play()
+				get_tree().create_timer(0.2).timeout.connect(func():
+					if reto_tipo == "memoria" and r.has("lamps_mesh"):
+						_lampara(pulsada, false))
+				if pulsada != r["seq"][r["i"]]:
+					_fallar("Te has equivocado en la secuencia")
+					return
+				r["i"] += 1
+				if r["i"] >= r["seq"].size():
+					r["ronda"] += 1
+					if r["ronda"] >= 3:
+						_superar()
+						return
+					r["fase"] = "espera"
+					r["ft"] = 1.0
+					r["seq"] = []
+					snd_pick.play()
+	big_lbl.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+
+
+# ---------------- Reflejos ----------------
+func _reflejos_update(delta: float, pulsada: int) -> void:
+	r["ft"] -= delta
+	if r["flecha"] < 0:
+		big_lbl.text = "PREPÁRATE..." if r["n"] == 0 else ""
+		if pulsada >= 0 and r["n"] > 0:
+			_fallar("Te has adelantado")
+			return
+		if r["ft"] <= 0.0:
+			r["flecha"] = randi() % 4
+			r["ft"] = r["lim"]
+			snd_beep.play()
+		return
+	big_lbl.text = FLECHAS[r["flecha"]]
+	big_lbl.add_theme_color_override("font_color", COLORES[r["flecha"]])
+	timer_lbl.visible = true
+	timer_lbl.text = "%.1f" % maxf(r["ft"], 0.0)
+	if pulsada >= 0:
+		if pulsada != r["flecha"]:
+			_fallar("Esa no era la flecha")
+			return
+		snd_tonos[pulsada].play()
+		r["n"] += 1
+		r["flecha"] = -1
+		r["ft"] = randf_range(0.35, 1.1)       # pausa aleatoria para que no te lo sepas
+		r["lim"] = maxf(0.6, r["lim"] - 0.07)  # cada vez hay menos tiempo
+		timer_lbl.visible = false
+		if r["n"] >= REFLEJOS_N:
+			_superar()
+	elif r["ft"] <= 0.0:
+		_fallar("Demasiado lento")
+
+
+# ---------------- Aguante ----------------
+func _aguante_circulo() -> void:
+	var n := Node3D.new()
+	add_child(n)
+	n.global_position = Vector3(reto_pos.x, 0.05, reto_pos.z)
+	var anillo := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = AGUANTE_R - 0.12
+	tm.outer_radius = AGUANTE_R
+	tm.rings = 48
+	anillo.mesh = tm
+	anillo.material_override = U.mat(Color(1.0, 0.6, 0.15), true)
+	n.add_child(anillo)
+	var suelo := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = AGUANTE_R
+	cm.bottom_radius = AGUANTE_R
+	cm.height = 0.02
+	suelo.mesh = cm
+	var m := U.mat(Color(1.0, 0.6, 0.15, 0.18), true)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	suelo.material_override = m
+	n.add_child(suelo)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.6, 0.2)
+	l.light_energy = 1.5
+	l.omni_range = AGUANTE_R + 2.0
+	l.position.y = 2.0
+	n.add_child(l)
+	reto_nodes.append(n)
+
+
+func _aguante_update(delta: float) -> void:
+	var dentro := _dist(reto_pos) < AGUANTE_R
+	if dentro:
+		r["p"] += delta
+	else:
+		r["p"] = maxf(0.0, r["p"] - delta * 0.5)
+	bar.visible = true
+	bar.value = r["p"] / AGUANTE_T * 100.0
+	big_lbl.text = "" if dentro else "¡VUELVE AL CÍRCULO!"
+	big_lbl.add_theme_color_override("font_color", Color(1.0, 0.45, 0.3))
+	prompt.text = "Aguante: %d / %d s" % [int(r["p"]), int(AGUANTE_T)]
+	# llegan zombis sin parar (los crea el anfitrión)
+	if Net.is_host():
+		r["spawn"] -= delta
+		if r["spawn"] <= 0.0:
+			r["spawn"] = 2.4
+			if get_tree().get_nodes_in_group("zombies").size() < 16:
+				game._spawn_enemy()
+	if r["p"] >= AGUANTE_T:
+		_superar()
+	elif rt > AGUANTE_T * 3.0:
+		_fallar("Has pasado demasiado tiempo fuera del círculo")
+
+
+# ---------------- Contrarreloj ----------------
+func _sitios() -> Array:
+	var res: Array = []
+	for s in mapa.spawns:
+		res.append(s)
+	for b in game.box_spots:
+		res.append(b[0])
+	for p in mapa.pistas:
+		res.append(p[3])
+	return res
+
+
+# Ruta de 5 puntos por sitios conocidos del mapa (así siempre se puede llegar)
+func _carrera_ruta() -> void:
+	var libres := _sitios()
+	var pts: Array = []
+	var cur: Vector3 = player.global_position
+	var total := 0.0
+	for k in 5:
+		var mejor := -1
+		var md := INF
+		for i in libres.size():
+			var q: Vector3 = libres[i]
+			var d := Vector2(q.x - cur.x, q.z - cur.z).length()
+			if d >= 9.0 and d < md:
+				md = d
+				mejor = i
+		if mejor < 0:
+			break
+		var q2: Vector3 = libres[mejor]
+		libres.remove_at(mejor)
+		q2 = U.clamp_pos(Vector3(q2.x, 0.0, q2.z), 0.6)
+		pts.append(q2)
+		total += md
+		cur = q2
+	r = {"pts": pts, "i": 0, "lim": total / 6.3 + 6.0, "aros": []}
+	for i in pts.size():
+		var n := Node3D.new()
+		add_child(n)
+		n.global_position = pts[i]
+		var aro := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = 1.0
+		tm.outer_radius = 1.18
+		aro.mesh = tm
+		aro.material_override = U.mat(Color(0.3, 1.0, 0.9), true)
+		aro.rotation_degrees.x = 90.0
+		aro.position.y = 1.3
+		n.add_child(aro)
+		var haz := U.box(n, Vector3(0.25, 8.0, 0.25), Vector3(0, 4.0, 0), Color(0.3, 1.0, 0.9, 0.25), true)
+		haz.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		haz.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var num := Label3D.new()
+		num.text = str(i + 1)
+		num.font_size = 90
+		num.pixel_size = 0.006
+		num.outline_size = 10
+		num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		num.no_depth_test = true
+		num.position.y = 2.9
+		n.add_child(num)
+		reto_nodes.append(n)
+		r["aros"].append(n)
+	_carrera_marcar()
+
+
+func _carrera_marcar() -> void:
+	for i in r["aros"].size():
+		var n: Node3D = r["aros"][i]
+		n.visible = i >= r["i"] and i <= r["i"] + 1
+		n.scale = Vector3.ONE * (1.0 if i == r["i"] else 0.6)
+
+
+func _carrera_update(delta: float) -> void:
+	var pts: Array = r["pts"]
+	if pts.is_empty():
+		_superar()
+		return
+	var left: float = r["lim"] - rt
+	timer_lbl.visible = true
+	timer_lbl.text = "%.1f" % maxf(left, 0.0)
+	var obj: Vector3 = pts[r["i"]]
+	prompt.text = "Corre al punto %d · %d m" % [r["i"] + 1, int(_dist(obj))]
+	big_lbl.text = ""
+	var aro: Node3D = r["aros"][r["i"]]
+	aro.rotation.y += 2.0 * delta
+	if _dist(obj) < 1.8:
+		snd_tonos[r["i"] % 4].play()
+		r["i"] += 1
+		if r["i"] >= pts.size():
+			_superar()
+			return
+		aro.visible = false
+		_carrera_marcar()
+	elif left <= 0.0:
+		_fallar("Se te ha acabado el tiempo")
+
+
+# =============================================================
+# Pasos (en red se aplican en todos los PCs)
+# =============================================================
 func _send_inv(what: String, id: String = "") -> void:
 	if Net.online:
 		_net_inv.rpc(what, id)
@@ -131,6 +615,8 @@ func _net_inv(what: String, id: String) -> void:
 
 func _found(id: String) -> void:
 	found[id] = true
+	if reto == id:          # otro jugador la ha superado mientras la hacías tú
+		_limpiar()
 	snd_pick.play()
 	var g: Node3D = glints[id]
 	var tw := g.create_tween()
@@ -140,8 +626,8 @@ func _found(id: String) -> void:
 	markers[id].visible = false
 	for p in mapa.pistas:
 		if p[0] == id:
-			_read(p[1], p[2])
-	# cada pista que descubres "despierta" a alguien
+			_read("¡PRUEBA SUPERADA!  ·  " + p[1], p[2])
+	# cada prueba superada "despierta" a alguien
 	if Net.is_host():
 		for i in 2:
 			game._spawn_enemy()
@@ -168,6 +654,8 @@ func _show_door() -> void:
 
 func _leave() -> void:
 	stage = 3
+	if reto != "":
+		_limpiar()
 	prompt.text = ""
 	bar.visible = false
 	obj_lbl.get_parent().visible = false
@@ -208,7 +696,7 @@ func _twist_line(text: String) -> void:
 	twist_lbl.add_theme_color_override("font_outline_color", Color(1, 1, 1, 0.6))
 
 
-# ---------------- Panel con el texto de la pista ----------------
+# ---------------- Panel con el texto que descubres ----------------
 func _read(title: String, text: String) -> void:
 	brief.modulate.a = 0.0          # que no se pise con el texto de la intro
 	read_title.text = title.to_upper()
@@ -245,7 +733,7 @@ func _build_reader() -> void:
 	read_title = Label.new()
 	read_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	read_title.add_theme_font_size_override("font_size", 22)
-	read_title.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0))
+	read_title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
 	box.add_child(read_title)
 	read_text = Label.new()
 	read_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -255,33 +743,118 @@ func _build_reader() -> void:
 	box.add_child(read_text)
 
 
-# Brillo flotante que marca una pista (una lupa con un "?" dentro)
-func _glint(pos: Vector3) -> Node3D:
+func _build_reto_ui() -> void:
+	big_lbl = Label.new()
+	big_lbl.set_anchors_preset(Control.PRESET_CENTER)
+	big_lbl.offset_left = -400.0
+	big_lbl.offset_right = 400.0
+	big_lbl.offset_top = -150.0
+	big_lbl.offset_bottom = -40.0
+	big_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	big_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	big_lbl.add_theme_font_size_override("font_size", 72)
+	big_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	big_lbl.add_theme_constant_override("outline_size", 12)
+	big_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(big_lbl)
+	snd_ok = AudioStreamPlayer.new()
+	snd_ok.stream = _tone(520.0, 0.5, 700.0)
+	snd_ok.volume_db = -4.0
+	add_child(snd_ok)
+	snd_mal = AudioStreamPlayer.new()
+	snd_mal.stream = _tone(220.0, 0.5, -120.0)
+	snd_mal.volume_db = -4.0
+	add_child(snd_mal)
+	for f in [392.0, 523.3, 659.3, 784.0]:        # un tono por flecha/luz
+		var a := AudioStreamPlayer.new()
+		a.stream = _tone(f, 0.22, 0.0)
+		a.volume_db = -6.0
+		add_child(a)
+		snd_tonos.append(a)
+
+
+# Brillo flotante que marca una prueba (un "!" de color dentro de un aro)
+func _glint(pos: Vector3, c: Color = Color(1.0, 0.85, 0.3)) -> Node3D:
 	var n := Node3D.new()
 	n.position = pos
 	n.set_meta("y", pos.y)
 	add_child(n)
 	var tor := MeshInstance3D.new()
 	var tm := TorusMesh.new()
-	tm.inner_radius = 0.13
-	tm.outer_radius = 0.17
+	tm.inner_radius = 0.15
+	tm.outer_radius = 0.2
 	tor.mesh = tm
-	tor.material_override = U.mat(Color(0.55, 0.85, 1.0), true)
+	tor.material_override = U.mat(c, true)
 	tor.rotation_degrees.x = 90.0
 	n.add_child(tor)
-	var mango := U.box(n, Vector3(0.05, 0.22, 0.05), Vector3(0.14, -0.2, 0), Color(0.3, 0.2, 0.12))
-	mango.rotation_degrees.z = 40.0
 	var q := Label3D.new()
-	q.text = "?"
-	q.font_size = 64
+	q.text = "!"
+	q.font_size = 72
 	q.pixel_size = 0.004
 	q.outline_size = 8
-	q.modulate = Color(0.75, 0.92, 1.0)
+	q.modulate = c.lightened(0.3)
 	q.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	n.add_child(q)
 	var l := OmniLight3D.new()
-	l.light_color = Color(0.55, 0.8, 1.0)
+	l.light_color = c
 	l.light_energy = 1.0
 	l.omni_range = 3.0
 	n.add_child(l)
 	return n
+
+
+# Diana de la prueba de puntería: sale, se queda unos segundos y se esconde.
+# player.gd la detecta en sus disparos (grupo "dianas") y llama a diana_hit().
+class Diana extends Node3D:
+	const U2 = preload("res://scripts/nucleo/util.gd")
+	var radius := 0.65
+	var vida := 2.7
+	var pos_ok := Vector3.ZERO
+	var reto
+	var t := 0.0
+	var tocada := false
+	var disco: Node3D
+
+	func _ready() -> void:
+		add_to_group("dianas")
+		disco = Node3D.new()
+		add_child(disco)
+		var cols := [Color(0.95, 0.95, 0.92), Color(0.85, 0.1, 0.1)]
+		for i in 4:
+			var c := U2.cylinder(disco, 0.5 - i * 0.12, 0.04 + i * 0.012, Vector3.ZERO, cols[i % 2], i == 3)
+			c.rotation_degrees.x = 90.0
+		U2.cylinder(disco, 0.03, 1.4, Vector3(0, -0.75, 0), Color(0.3, 0.3, 0.32))
+		var l := OmniLight3D.new()
+		l.light_color = Color(1.0, 0.3, 0.25)
+		l.light_energy = 0.8
+		l.omni_range = 2.5
+		add_child(l)
+		disco.scale = Vector3.ZERO
+		disco.create_tween().tween_property(disco, "scale", Vector3.ONE, 0.18).set_trans(Tween.TRANS_BACK)
+
+	func _process(delta: float) -> void:
+		t += delta
+		var cam := get_viewport().get_camera_3d()
+		if cam != null:        # siempre de cara a ti
+			var to := cam.global_position - global_position
+			to.y = 0.0
+			if to.length() > 0.01:
+				rotation.y = atan2(to.x, to.z)
+		if not tocada and t > vida:
+			tocada = true
+			remove_from_group("dianas")
+			var tw := disco.create_tween()
+			tw.tween_property(disco, "scale", Vector3.ZERO, 0.15)
+			tw.tween_callback(queue_free)
+
+	func diana_hit() -> void:
+		if tocada:
+			return
+		tocada = true
+		remove_from_group("dianas")
+		if reto != null and is_instance_valid(reto):
+			reto.diana_tocada(self)
+		var tw := disco.create_tween()
+		tw.tween_property(disco, "scale", Vector3.ONE * 1.3, 0.06)
+		tw.tween_property(disco, "scale", Vector3.ZERO, 0.12)
+		tw.tween_callback(queue_free)

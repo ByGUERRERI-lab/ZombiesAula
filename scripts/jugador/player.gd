@@ -23,6 +23,7 @@ const JAN_MAX := 4
 const SUSTO_CHANCE := 0.3      # el primer robo de cada mapa asusta siempre; los demás, a veces
 const CAFE_RELOAD := 0.5      # con café recargas en la mitad de tiempo...
 const CAFE_FIRE := 0.75       # ...y disparas un 25 % más rápido
+const HEAD_MULT := 2.5        # daño de un disparo a la cabeza
 const JAN_IDLE := Vector3(0.17, 1.3, -0.48)    # Jan en la mano
 const JAN_UP := Vector3(0.07, 1.44, -0.5)      # levantado, quitándose la gorra
 
@@ -48,6 +49,12 @@ var jan_tween: Tween
 var porro_t := 0.0                   # segundos de colocón que quedan
 var cafe_t := 0.0                    # segundos de café que quedan
 var has_gta := false
+var perks: Array = []                # bebidas de las máquinas (bebidas.gd): "tanque", "rapida", "doble", "revivir", "turbo"
+var autorevive_t := 0.0
+var dios := false                    # consola: no te hacen daño
+var aim_y := 0.0                     # altura de los ojos al disparar...
+var aim_slope := 0.0                 # ...y cuánto sube o baja el disparo por metro (según miras arriba o abajo)
+var snd_head: AudioStreamPlayer              # > 0 mientras te levantas solo con el Zumo Revivo
 # Sprint (carrera del vídeo de clase, ver Ch.run_pose)
 var sprinting := false
 var stamina := 1.0                   # de 0 a 1
@@ -199,10 +206,14 @@ func _build_model() -> void:
 	rig = parts["rig"]
 	if is_local:
 		U.set_layer(head_node, 2)      # tu propia cabeza solo se ve en tercera persona
+		if parts.has("cuerpo3d"):
+			U.set_layer(parts["cuerpo3d"], 2)    # avatar 3D: en primera persona no te ves por dentro
 
 	# Sitio donde se coloca el arma de fuego equipada
 	gun_holder = Node3D.new()
 	gun_holder.position = Vector3(0.22, 1.1, -0.45)
+	if parts.has("arma_pos"):
+		gun_holder.position = parts["arma_pos"]
 	var hand: Node3D = rig["hand"]     # todo lo que empuñas se mueve con el brazo
 	hand.add_child(gun_holder)
 
@@ -348,7 +359,7 @@ func _start_reload() -> void:
 	var d: Dictionary = W.DATA[s["id"]]
 	if s["mag"] >= d["mag"] or s["reserve"] <= 0:
 		return
-	reload_t = d["reload"] * (CAFE_RELOAD if cafe_t > 0.0 else 1.0)
+	reload_t = d["reload"] * (CAFE_RELOAD if cafe_t > 0.0 else 1.0) * (0.5 if has_perk("rapida") else 1.0)
 	reload_slot = cur
 	var tw := create_tween()
 	tw.tween_property(gun_holder, "rotation:x", deg_to_rad(-40.0), 0.2)
@@ -379,6 +390,15 @@ func _physics_process(delta: float) -> void:
 		if bleed <= 0.0:
 			_die()
 		return
+	if autorevive_t > 0.0:
+		autorevive_t -= delta
+		sprinting = false
+		if autorevive_t <= 0.0:
+			hp = max_hp
+			since_hit = 3.0
+			_set_pose(0)
+			game.toast_small("¡Te has levantado con el Zumo Revivo!")
+		return
 	if frozen:
 		sprinting = false
 		return
@@ -387,8 +407,9 @@ func _physics_process(delta: float) -> void:
 	porro_t = maxf(0.0, porro_t - delta)
 	cafe_t = maxf(0.0, cafe_t - delta)
 	var high := porro_t > 0.0
-	if since_hit > (2.0 if high else 5.0) and hp < max_hp:
-		hp = minf(max_hp, hp + (45.0 if high else 20.0) * delta)
+	var revivo := has_perk("revivir")
+	if since_hit > (2.0 if high or revivo else 5.0) and hp < max_hp:
+		hp = minf(max_hp, hp + (45.0 if high else (35.0 if revivo else 20.0)) * delta * (2.0 if has_perk("tanque") else 1.0))
 
 	# Movimiento WASD relativo a hacia dónde miras
 	var d := Vector3.ZERO
@@ -399,7 +420,8 @@ func _physics_process(delta: float) -> void:
 		if Input.is_key_pressed(KEY_D): d.x += 1.0
 	d = (global_transform.basis * d.normalized())
 	_update_sprint(delta)
-	var spd := SPEED * (1.3 if has_gta else 1.0) * (SPRINT if sprinting else 1.0)
+	var turbo := has_perk("turbo")
+	var spd := SPEED * (1.3 if has_gta else 1.0) * (1.08 if turbo else 1.0) * ((SPRINT + (0.25 if turbo else 0.0)) if sprinting else 1.0)
 	velocity.x = d.x * spd + knock.x
 	velocity.z = d.z * spd + knock.z
 	knock = knock.lerp(Vector3.ZERO, 8.0 * delta)
@@ -449,7 +471,7 @@ func _update_sprint(delta: float) -> void:
 	sprinting = Input.is_key_pressed(KEY_SHIFT) and Input.is_key_pressed(KEY_W) and not Input.is_key_pressed(KEY_S) \
 			and not input_blocked and not attacking and not tired
 	if sprinting:
-		stamina -= delta / SPRINT_TIME
+		stamina -= delta / (SPRINT_TIME * (2.0 if has_perk("turbo") else 1.0))
 		if stamina <= 0.0:
 			stamina = 0.0
 			tired = true
@@ -515,7 +537,7 @@ func _shoot() -> void:
 		_start_reload()
 		return
 	s["mag"] -= 1
-	cooldown = d["cd"] * (CAFE_FIRE if cafe_t > 0.0 else 1.0)
+	cooldown = d["cd"] * (CAFE_FIRE if cafe_t > 0.0 else 1.0) * (0.7 if has_perk("doble") else 1.0)
 	if d.get("explode", false):
 		_fire_ray(d)
 	else:
@@ -558,11 +580,15 @@ func _net_ray(origin: Vector3, vel: Vector3) -> void:
 
 func _fire_bullets(id: String, d: Dictionary) -> void:
 	var origin := global_position + Vector3(0, 1.3, 0) + aim_dir * 0.9
+	# inclinación real de la mirada, para saber a qué altura llega la bala (disparos a la cabeza)
+	var d3: Vector3 = -head_pivot.global_transform.basis.z
+	aim_y = head_pivot.global_position.y
+	aim_slope = d3.y / maxf(Vector2(d3.x, d3.z).length(), 0.05)
 	var ends := PackedVector3Array()
 	for i in int(d["pellets"]):
 		var sp := float(d["spread"])
 		var ang := deg_to_rad(randf_range(-sp, sp))
-		ends.append(_pellet(origin, aim_dir.rotated(Vector3.UP, ang), float(d["dmg"]), float(d["range"]), d["pierce"]))
+		ends.append(_pellet(origin, aim_dir.rotated(Vector3.UP, ang), float(d["dmg"]) * (2.0 if has_perk("doble") else 1.0), float(d["range"]), d["pierce"]))
 	_fx_shot(origin, ends, d["tracer"], id)
 	if Net.running and Net.online:
 		_net_shot.rpc(origin, ends, d["tracer"], id)
@@ -581,7 +607,7 @@ func _pellet(origin: Vector3, dir: Vector3, dmg: float, rng: float, pierce: bool
 			continue
 		var perp := (rel - dir * t).length()
 		if perp < z.radius:
-			hits.append([t, z, false])
+			hits.append([t, z, false, _es_cabeza(z, t, perp)])
 	if Net.mode == "versus":
 		for p in get_tree().get_nodes_in_group("players"):
 			if p == self or not p.can_be_hit():
@@ -593,6 +619,13 @@ func _pellet(origin: Vector3, dir: Vector3, dmg: float, rng: float, pierce: bool
 				continue
 			if (rel2 - dir * t2).length() < 0.45:
 				hits.append([t2, p, true])
+	# dianas de las pruebas de habilidad (investigacion.gd): solo las ve quien hace la prueba
+	for dn in get_tree().get_nodes_in_group("dianas"):
+		var rel3: Vector3 = dn.global_position - origin
+		rel3.y = 0.0
+		var t3 := rel3.dot(dir)
+		if t3 > 0.0 and t3 < rng and (rel3 - dir * t3).length() < dn.radius:
+			dn.diana_hit()
 	var end_t := rng
 	if hits.size() > 0:
 		hits.sort_custom(func(a, b): return a[0] < b[0])
@@ -608,8 +641,57 @@ func _pellet(origin: Vector3, dir: Vector3, dmg: float, rng: float, pierce: bool
 func _hit(h: Array, dmg: float, dir: Vector3) -> void:
 	if h[2]:
 		h[1].hurt(dmg * VS_MULT, peer_id)
+	elif h.size() > 3 and h[3]:
+		game.damage_enemy(h[1], dmg * HEAD_MULT, dir)     # ¡a la cabeza!
+		if snd_head == null:
+			snd_head = AudioStreamPlayer.new()
+			snd_head.stream = U.make_ting()
+			snd_head.volume_db = -12.0
+			snd_head.pitch_scale = 1.6
+			add_child(snd_head)
+		snd_head.play()
 	else:
 		game.damage_enemy(h[1], dmg, dir)
+
+
+# ¿La bala le llega a la altura de la cabeza? (el 18 % de arriba del cuerpo, y más estrecho)
+func _es_cabeza(z, t: float, perp: float) -> bool:
+	if perp > z.radius * 0.75:
+		return false
+	var alto := _altura(z)
+	if alto <= 0.0:
+		return false
+	var y: float = aim_y + (t + 0.9) * aim_slope - z.global_position.y
+	return y > alto * 0.82 and y < alto * 1.08
+
+
+# Altura del enemigo: la da él mismo si sabe dónde tiene la cabeza (Isabella con su sombrero,
+# Majin Bu...) y si no se mide con sus mallas visibles (se guarda un rato)
+func _altura(z) -> float:
+	if z.has_method("altura_cabeza"):
+		return z.altura_cabeza()
+	var now := Time.get_ticks_msec()
+	if z.has_meta("alto") and now - int(z.get_meta("alto_t")) < 1500:
+		return z.get_meta("alto")
+	var m = z.get("model")
+	var n: Node3D = m if m is Node3D else z
+	var b := _aabb_visible(n, Transform3D(n.global_transform.basis, n.global_position - z.global_position))
+	var alto := b.end.y if b.size != Vector3.ZERO else 0.0
+	z.set_meta("alto", alto)
+	z.set_meta("alto_t", now)
+	return alto
+
+
+static func _aabb_visible(n: Node, xf: Transform3D) -> AABB:
+	var out := AABB()
+	if n is MeshInstance3D and n.mesh != null:
+		out = xf * n.mesh.get_aabb()
+	for c in n.get_children():
+		if c is Node3D and c.visible:
+			var b := _aabb_visible(c, xf * c.transform)
+			if b.size != Vector3.ZERO:
+				out = b if out.size == Vector3.ZERO else out.merge(b)
+	return out
 
 
 func can_be_hit() -> bool:
@@ -757,7 +839,7 @@ func hurt(amount: float, attacker: int = 0) -> void:
 		return
 	if game.explorando:
 		return
-	if dead or downed:
+	if dead or downed or autorevive_t > 0.0 or dios:
 		return
 	if porro_t > 0.0:
 		amount *= 0.5
@@ -765,6 +847,15 @@ func hurt(amount: float, attacker: int = 0) -> void:
 	since_hit = 0.0
 	if hp <= 0.0:
 		hp = 0.0
+		# Zumo Revivo jugando solo: te levantas tú solo (y pierdes las bebidas)
+		if has_perk("revivir") and Net.mode != "versus" and not (Net.mode == "coop" and Net.players.size() > 1):
+			_jan_reset()
+			lose_perks()
+			reload_t = 0.0
+			autorevive_t = 3.0
+			_set_pose(1)
+			game.toast_small("¡Caído! El Zumo Revivo te levanta...")
+			return
 		if Net.mode == "versus":
 			_die()
 			game.vs_local_killed(attacker)
@@ -815,16 +906,35 @@ func use_cafe() -> void:
 
 func give_gta() -> void:
 	has_gta = true
-	max_hp = 150.0
+	_recalc_vida()
 	hp = max_hp
+
+
+# ---------------- Bebidas de las máquinas (bebidas.gd) ----------------
+func has_perk(id: String) -> bool:
+	return perks.has(id)
+
+
+func give_perk(id: String) -> void:
+	if not perks.has(id):
+		perks.append(id)
+	_recalc_vida()
+	if id == "tanque":
+		hp = max_hp
+
+
+# 100 de base, +50 con el GTA de la tienda, +150 con el Batido Tanque
+func _recalc_vida() -> void:
+	max_hp = 100.0 + (50.0 if has_gta else 0.0) + (150.0 if has_perk("tanque") else 0.0)
+	hp = minf(hp, max_hp)
 
 
 func lose_perks() -> void:
 	porro_t = 0.0
 	cafe_t = 0.0
 	has_gta = false
-	max_hp = 100.0
-	hp = minf(hp, max_hp)
+	perks.clear()
+	_recalc_vida()
 
 
 # ---------------- Víctor te roba ----------------
@@ -893,8 +1003,7 @@ func _take_something() -> Dictionary:
 			return {"k": "porro", "t": c}
 		"gta":
 			has_gta = false
-			max_hp = 100.0
-			hp = minf(hp, max_hp)
+			_recalc_vida()
 			return {"k": "gta"}
 	var i := int(pick.substr(4))
 	var w: Dictionary = slots[i]
@@ -967,7 +1076,8 @@ func net_revive() -> void:
 func respawn(pos: Vector3, reset_weapons: bool) -> void:
 	dead = false
 	downed = false
-	hp = 100.0
+	autorevive_t = 0.0
+	hp = max_hp
 	since_hit = 10.0
 	knock = Vector3.ZERO
 	global_position = pos

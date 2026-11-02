@@ -29,8 +29,8 @@ var casino
 var game
 var mode := "slots"
 var bet_amount := 100
-var font_num: SystemFont
-var font_ui: SystemFont
+var font_num: Font
+var font_ui: Font
 var panel: PanelContainer
 var points_lbl: Label
 var msg_lbl: Label
@@ -150,11 +150,8 @@ func _ready() -> void:
 	layer = 40
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	game = casino.game
-	font_num = SystemFont.new()
-	font_num.font_names = PackedStringArray(["Impact", "Arial Black", "Arial"])
-	font_ui = SystemFont.new()
-	font_ui.font_names = PackedStringArray(["Segoe UI", "Arial", "DejaVu Sans"])
-	font_ui.font_weight = 600
+	font_num = HudScript.fuente(HudScript.F_NUM)
+	font_ui = HudScript.fuente(HudScript.F_UI)
 
 	# fondo desenfocado con un tinte morado de casino
 	var bg := ColorRect.new()

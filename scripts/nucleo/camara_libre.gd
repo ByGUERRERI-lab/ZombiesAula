@@ -12,7 +12,7 @@ const VEL := 6.0
 const VEL_MIN := 1.0
 const VEL_MAX := 40.0
 const SENS := 0.0025
-const AYUDA := "F8  salir  ·  Intro  dejar al jugador aquí\nWASD  moverse  ·  Q / E  bajar / subir\nShift  rápido  ·  rueda  velocidad\nTab  siguiente lugar  ·  C  vista aérea\nO  abrir puertas  ·  F  linterna\nN  poner enemigo  ·  B  enemigos quietos / activos\nM  siguiente mapa  ·  H  ocultar esto"
+const AYUDA := "º  consola  ·  F8  salir  ·  Intro  dejar al jugador aquí\nWASD  moverse  ·  Q / E  bajar / subir\nShift  rápido  ·  rueda  velocidad\nTab  siguiente lugar  ·  C  vista aérea\nO  abrir puertas  ·  F  linterna\nN  poner enemigo  ·  B  enemigos quietos / activos\nM  siguiente mapa  ·  H  ocultar esto"
 # nombre, posición, giro y cabeceo
 const LUGARES := [
 	["Aula", Vector3(0.0, 1.7, 6.5), 0.0, 0.0],
@@ -232,6 +232,8 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if not activa:
 		return
+	if game.consola != null and game.consola.abierta:
+		return      # escribiendo en la consola: que las teclas no muevan la cámara
 	var d := Vector3.ZERO
 	if Input.is_key_pressed(KEY_W): d.z -= 1.0
 	if Input.is_key_pressed(KEY_S): d.z += 1.0

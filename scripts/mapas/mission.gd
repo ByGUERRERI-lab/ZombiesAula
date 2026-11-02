@@ -717,13 +717,10 @@ func _build_ui() -> void:
 	obj_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(obj_panel)
 	obj_lbl = Label.new()
-	obj_lbl.add_theme_font_size_override("font_size", 16)
+	obj_lbl.add_theme_font_size_override("font_size", 19)
 	obj_lbl.add_theme_color_override("font_color", Color(0.95, 0.93, 0.85))
 	obj_lbl.add_theme_constant_override("line_spacing", 2)
-	var f := SystemFont.new()
-	f.font_names = PackedStringArray(["Segoe UI", "Arial", "DejaVu Sans"])
-	f.font_weight = 600
-	obj_lbl.add_theme_font_override("font", f)
+	obj_lbl.add_theme_font_override("font", HudScript.fuente(HudScript.F_UI))
 	obj_panel.add_child(obj_lbl)
 	timer_lbl = Label.new()
 	timer_lbl.set_anchors_preset(Control.PRESET_CENTER_TOP)
@@ -733,7 +730,8 @@ func _build_ui() -> void:
 	timer_lbl.offset_bottom = 80.0
 	timer_lbl.pivot_offset = Vector2(200, 35)
 	timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	timer_lbl.add_theme_font_size_override("font_size", 52)
+	timer_lbl.add_theme_font_size_override("font_size", 68)
+	timer_lbl.add_theme_font_override("font", HudScript.fuente(HudScript.F_NUM))
 	timer_lbl.add_theme_color_override("font_color", Color(1.0, 0.2, 0.15))
 	timer_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	timer_lbl.add_theme_constant_override("outline_size", 10)
@@ -747,7 +745,8 @@ func _build_ui() -> void:
 	brief.offset_bottom = 200.0
 	brief.pivot_offset = Vector2(640, 70)
 	brief.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	brief.add_theme_font_size_override("font_size", 30)
+	brief.add_theme_font_size_override("font_size", 34)
+	brief.add_theme_font_override("font", HudScript.fuente(HudScript.F_UI_BOLD))
 	brief.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
 	brief.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	brief.add_theme_constant_override("outline_size", 8)

@@ -16,8 +16,8 @@ var panel: PanelContainer
 var points_lbl: Label
 var quote: Label
 var cards := {}              # id -> {"panel", "btn", "state", "item"}
-var font_num: SystemFont
-var font_ui: SystemFont
+var font_num: Font
+var font_ui: Font
 var snd_buy: AudioStreamPlayer
 var snd_no: AudioStreamPlayer
 var paused_it := false
@@ -29,11 +29,8 @@ func _ready() -> void:
 	layer = 40
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	game = tienda.game
-	font_num = SystemFont.new()
-	font_num.font_names = PackedStringArray(["Impact", "Arial Black", "Arial"])
-	font_ui = SystemFont.new()
-	font_ui.font_names = PackedStringArray(["Segoe UI", "Arial", "DejaVu Sans"])
-	font_ui.font_weight = 600
+	font_num = HudScript.fuente(HudScript.F_NUM)
+	font_ui = HudScript.fuente(HudScript.F_UI)
 
 	# fondo: lo que hay detrás, desenfocado y oscurecido
 	var bg := ColorRect.new()

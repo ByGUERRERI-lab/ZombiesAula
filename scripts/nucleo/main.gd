@@ -28,6 +28,9 @@ const MapasScript = preload("res://scripts/mapas/mapas.gd")
 const InvestigaScript = preload("res://scripts/mapas/investigacion.gd")
 const CesurScript = preload("res://scripts/mapas/cesur.gd")
 const CamaraScript = preload("res://scripts/nucleo/camara_libre.gd")
+const BebidasScript = preload("res://scripts/jugador/bebidas.gd")
+const ConsolaScript = preload("res://scripts/nucleo/consola.gd")
+const PadelScript = preload("res://scripts/mapas/padel.gd")
 const IAN_FIRST := 3        # Ian (minijefe tanque) sale en la oleada 3...
 const IAN_EVERY := 6        # ...y luego cada 6 (3, 9, 15, 21...)
 const VICTOR_FIRST := 2     # Víctor sale a robar desde la oleada 2 (una vez por oleada como mucho)
@@ -82,6 +85,9 @@ var net_t := 0.0
 var target_t := 0.0
 var coop_over := false
 var revive_t := 0.0
+var bebidas                # bebidas.gd: máquinas de bebidas con habilidades
+var consola                # consola.gd: comandos de prueba (º o F1)
+var padel                  # padel.gd: partido de pádel contra Víctor en el patio
 var box_owner := 1
 # Todos contra todos
 var vs_kills := {}
@@ -191,6 +197,15 @@ func _ready() -> void:
 		js.global_position = Vector3(U.CASINO_WX - 0.6, 0.0, 58.0)
 		js.zona = Rect2(22.2, 49.0, 5.8, 20.8)      # se activa al entrar en el tramo norte del pasillo largo
 	_build_hud()
+	bebidas = BebidasScript.new()
+	bebidas.name = "Bebidas"
+	bebidas.game = self
+	add_child(bebidas)
+	if mapa == null and Net.mode != "versus":
+		padel = PadelScript.new()
+		padel.name = "Padel"
+		padel.game = self
+		add_child(padel)
 	if Net.mode != "versus":
 		# misión para ganar: escapar de CESUR (o, en el bucle, investigar dónde estás)
 		mission = MissionScript.new() if mapa == null else InvestigaScript.new()
@@ -218,6 +233,10 @@ func _ready() -> void:
 	camara.game = self
 	camara.ui = ui
 	add_child(camara)
+	consola = ConsolaScript.new()
+	consola.name = "Consola"
+	consola.game = self
+	add_child(consola)
 	Net.scene_ready()
 
 
@@ -252,7 +271,7 @@ func _spawn_players() -> void:
 # Lo que te llevas del mapa anterior del bucle (puntos, armas, oleada...)
 func save_carry() -> void:
 	Net.carry = {"points": points, "kills": kills, "wave": wave, "jan": player.jan_count,
-		"slots": player.slots.duplicate(true)}
+		"slots": player.slots.duplicate(true), "perks": player.perks.duplicate()}
 
 
 func _restore_carry() -> void:
@@ -265,6 +284,8 @@ func _restore_carry() -> void:
 	wave = c["wave"]
 	player.jan_count = c["jan"]
 	player.slots = c["slots"]
+	for id in c.get("perks", []):          # las bebidas también se vienen contigo
+		player.give_perk(id)
 	player._select(0, true)
 
 
@@ -699,12 +720,13 @@ func _revive_check(delta: float, e_now: bool) -> void:
 	if target == null:
 		revive_t = 0.0
 		return
+	var rt := REVIVE_TIME * (0.5 if player.has_perk("revivir") else 1.0)     # Zumo Revivo: el doble de rápido
 	if e_now:
 		revive_t += delta
 	else:
 		revive_t = 0.0
-	prompt.text = "Mantén [E] para reanimar a %s  %d%%" % [target.display_name, int(revive_t / REVIVE_TIME * 100.0)]
-	if revive_t >= REVIVE_TIME:
+	prompt.text = "Mantén [E] para reanimar a %s  %d%%" % [target.display_name, int(revive_t / rt * 100.0)]
+	if revive_t >= rt:
 		revive_t = 0.0
 		target.net_revive.rpc_id(target.peer_id)
 		points += 100
@@ -1171,6 +1193,10 @@ func _prompt_for(it) -> String:
 			return "[E] Coger ganzúa"
 		"maleta":
 			return "[E] Abrir la maleta de Jorge"
+		"perk":
+			return bebidas.prompt(it)
+		"padel":
+			return padel.prompt()
 	return ""
 
 
@@ -1240,6 +1266,10 @@ func _interact(it) -> void:
 			_toast("Has encontrado una ganzúa... ¿qué podrá abrir?")
 		"maleta":
 			_open_maleta(it)
+		"perk":
+			bebidas.comprar(it)
+		"padel":
+			padel.empezar()
 
 
 @rpc("any_peer", "call_local", "reliable")

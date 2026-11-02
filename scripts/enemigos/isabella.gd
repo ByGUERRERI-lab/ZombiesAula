@@ -80,6 +80,11 @@ func _cargar_modelo() -> bool:
 	return true
 
 
+# Altura de la parte de arriba de la cabeza sin el sombrero (disparos a la cabeza de player.gd)
+func altura_cabeza() -> float:
+	return 1.62
+
+
 # Rayo rosa y risita al aparecer (se ve en todos los PCs)
 func _spawn_fx() -> void:
 	var fx := Node3D.new()

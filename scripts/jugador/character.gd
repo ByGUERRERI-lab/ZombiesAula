@@ -23,7 +23,16 @@ const OUTFITS := ["Camiseta", "Sudadera con capucha", "Chaqueta abierta"]
 const HATS := ["Nada", "Gorra", "Gorro de lana", "Diadema"]
 const GLASSES := ["Sin gafas", "Gafas", "Gafas de sol"]
 # Aspectos predeterminados (personajes hechos a partir de fotos)
-const PRESETS := ["Personalizado", "Spider-Juan", "Juan Gato"]
+const PRESETS := ["Personalizado", "Spider-Juan", "Juan Gato", "Hugo (3D)"]
+const HUGO_GLB := "res://modelos/personajes/hugo.glb"     # avatar realista hecho con Avaturn (esqueleto de Mixamo)
+const HUGO_SCALE := 0.957                                   # el .glb mide 1,88 m: así mide 1,80
+# postura de los brazos de Hugo con el arma (pitch, yaw en el espacio del .glb) y giro de las muñecas
+const BRAZO_R := Vector2(0.42, 1.45)
+const BRAZO_L := Vector2(0.38, -1.75)
+const CODO_R := Vector2(-0.1, 0.66)
+const CODO_L := Vector2(-0.1, -0.53)
+const MANO_R := -1.1
+const MANO_L := 1.1
 
 # [clave, texto, lista de opciones]
 const OPTIONS := [
@@ -277,6 +286,9 @@ static func build_player(parent: Node, s: Dictionary) -> Dictionary:
 			return build_juan(parent)
 		2:
 			return build_juan_gato(parent)
+		3:
+			if ResourceLoader.exists(HUGO_GLB):
+				return build_hugo(parent)
 	var model := Node3D.new()
 	parent.add_child(model)
 	var skin_c := col(SKINS, s["skin"])
@@ -1622,3 +1634,320 @@ static func build_loot(parent: Node3D, item: Dictionary) -> Node3D:
 			U.box(n, Vector3(0.14, 0.04, 0.038), Vector3(0, 0.03, 0), Color(0.45, 0.75, 0.45))
 	U.toonify(n, 0.006)
 	return n
+
+
+# ---------------------------------------------------------------
+# Aspecto "Hugo (3D)": el avatar realista de modelos/personajes/hugo.glb
+# (Avaturn, esqueleto de Mixamo). El jugador sigue usando el mismo "rig" de
+# pivotes que los demás personajes (correr, caer, empuñar...): HugoAnim copia
+# cada frame el giro de esos pivotes a los huesos del esqueleto.
+# Devuelve además "cuerpo3d" (las mallas) para ocultarlas en primera persona.
+# ---------------------------------------------------------------
+static func build_hugo(parent: Node) -> Dictionary:
+	var root := Node3D.new()
+	parent.add_child(root)
+	var inst: Node3D = load(HUGO_GLB).instantiate()
+	inst.rotation.y = PI            # el modelo mira a +Z y en el juego se mira a -Z
+	inst.scale = Vector3.ONE * HUGO_SCALE
+	root.add_child(inst)
+	for ap in inst.find_children("*", "AnimationPlayer", true, false):
+		ap.stop()
+		ap.active = false           # los huesos los movemos nosotros
+	var skel: Skeleton3D = inst.find_children("*", "Skeleton3D", true, false)[0]
+	skel.reset_bone_poses()
+	# pivotes invisibles con la misma forma que los del resto de personajes
+	var model := pivot(root, Vector3(0, 0.95, 0))
+	var legs := []
+	for sx in [-1.0, 1.0]:
+		var thigh := pivot(root, Vector3(sx * 0.1, 0.92, 0.0))
+		var shin := pivot(thigh, Vector3(sx * 0.1, 0.5, 0.0))
+		legs.append({"thigh": thigh, "shin": shin})
+	var arm_r := pivot(model, Vector3(0.18, 1.4, 0.0))
+	var arm_l := pivot(model, Vector3(-0.18, 1.4, 0.0))
+	var head := Node3D.new()
+	head.position = Vector3(0, 1.62, 0)
+	model.add_child(head)
+	var rig := make_rig(model, legs, arm_l, arm_r, head)
+	var anim := HugoAnim.new()
+	anim.skel = skel
+	anim.root = root
+	anim.rig = rig
+	root.add_child(anim)
+	# posturas base (en el espacio del .glb, que mira a +Z): de la T a sujetar el arma con las dos manos
+	# (las dos manos se juntan en la empuñadura: el brazo izquierdo cruza un poco el pecho)
+	anim.add("RightArm", rig["arms"][1], Quaternion(Vector3.RIGHT, BRAZO_R.x) * Quaternion(Vector3.UP, BRAZO_R.y))
+	anim.add("LeftArm", rig["arms"][0], Quaternion(Vector3.RIGHT, BRAZO_L.x) * Quaternion(Vector3.UP, BRAZO_L.y))
+	anim.add("RightForeArm", null, Quaternion(Vector3.RIGHT, CODO_R.x) * Quaternion(Vector3.UP, CODO_R.y))
+	anim.add("LeftForeArm", null, Quaternion(Vector3.RIGHT, CODO_L.x) * Quaternion(Vector3.UP, CODO_L.y))
+	anim.add("RightHand", null, Quaternion(Vector3.RIGHT, MANO_R))
+	anim.add("LeftHand", null, Quaternion(Vector3.RIGHT, MANO_L))
+	anim.add("Hips", null)
+	anim.add("Spine", null)
+	anim.add("Spine1", rig["spine"])
+	anim.add("Spine2", null)
+	anim.add("Neck", null)
+	anim.add("Head", rig["head"])
+	anim.add("LeftShoulder", null)
+	anim.add("RightShoulder", null)
+	anim.add("LeftUpLeg", rig["hips"][0])
+	anim.add("RightUpLeg", rig["hips"][1])
+	anim.add("LeftLeg", rig["knees"][0])
+	anim.add("RightLeg", rig["knees"][1])
+	anim.add("LeftFoot", null)
+	anim.add("RightFoot", null)
+	anim.add("LeftToeBase", null)
+	anim.add("RightToeBase", null)
+	anim.dedos()
+	anim.preparar_ik()
+	# "arma_pos": dónde quedan sus manos con esta postura (ahí va el arma)
+	return {"model": root, "head": head, "eyes": [], "rig": rig, "cuerpo3d": inst, "arma_pos": Vector3(0.1, 1.2, -0.5)}
+
+
+# Anima el esqueleto de Mixamo del avatar de Hugo. Dos capas:
+#  1. los pivotes del rig que mueve player.gd (sprint, caerse...) se copian a los huesos
+#  2. encima, una animación propia hecha a mano que sale de cómo se mueve de verdad
+#     el personaje (así va igual en tu PC, en la copia de red y en el menú):
+#     respirar y balancearse quieto, trotar hacia delante / atrás / de lado,
+#     las piernas encogidas en el aire y los dedos agarrando el arma.
+class HugoAnim extends Node:
+	const VUELTA := Quaternion(Vector3.UP, PI)     # el .glb está girado 180 grados dentro del personaje
+	const ZANCADA := 2.3                            # metros por ciclo de dos pasos al trotar
+	const VEL_TROTE := 6.0                          # velocidad normal del jugador (player.SPEED)
+	var skel: Skeleton3D
+	var root: Node3D
+	var rig: Dictionary
+	var map: Array = []        # [hueso, giro local en reposo, giro global en reposo, pivote, postura base]
+	var idx := {}              # nombre de hueso -> posición en map
+	var extra := {}            # nombre de hueso -> giro extra (euler, espacio del personaje)
+	var dedos_q := {}          # hueso de dedo -> giro (ya en espacio del .glb)
+	var hips_i := -1
+	var hips_pos := Vector3.ZERO
+	var escala := 1.0          # metros del personaje por unidad del esqueleto
+	var last := Vector3.ZERO
+	var vel := Vector3.ZERO
+	var t := 0.0
+	var ph := 0.0              # fase de la zancada
+	var k_mov := 0.0           # 0 quieto, 1 trotando
+	var k_aire := 0.0
+	var fw := 1.0              # dirección del paso (1 delante, -1 detrás, 0 de lado)
+	var sd := 0.0
+	var primero := true
+	var ik := []               # por brazo: [hombro, codo, muñeca, largo1, largo2, polo, lado]
+	var ik_k := 1.0            # 1 = manos en el arma
+	var arma_local := Vector3(0.1, 1.2, -0.5)    # dónde va el arma (espacio del personaje)
+
+	func add(bone: String, proxy: Node3D, base: Quaternion = Quaternion.IDENTITY) -> void:
+		var i := skel.find_bone(bone)
+		if i < 0:
+			return
+		idx[bone] = map.size()
+		map.append([i, skel.get_bone_pose_rotation(i), skel.get_bone_global_pose(i).basis.get_rotation_quaternion(), proxy, base])
+		if bone == "Hips":
+			hips_i = i
+			hips_pos = skel.get_bone_pose_position(i)
+
+	# Dedos cerrados como agarrando la empuñadura (giro sobre el eje del ancho de la mano)
+	func dedos() -> void:
+		for lado in ["Left", "Right"]:
+			var sgn := 1.0 if lado == "Right" else -1.0     # en el .glb la mano derecha apunta a -X
+			for dedo in ["Index", "Middle", "Ring", "Pinky"]:
+				for n in [1, 2, 3]:
+					var c: float = [0.0, 0.75, 0.95, 0.6][n]
+					c += 0.08 * ["Index", "Middle", "Ring", "Pinky"].find(dedo)
+					_dedo("%sHand%s%d" % [lado, dedo, n], Quaternion(Vector3.FORWARD, -sgn * c))
+			for n in [1, 2, 3]:
+				_dedo("%sHandThumb%d" % [lado, n], Quaternion(Vector3.UP, sgn * [0.0, 0.35, 0.3, 0.25][n]))
+
+	func _dedo(bone: String, q: Quaternion) -> void:
+		var i := skel.find_bone(bone)
+		if i < 0:
+			return
+		var g := skel.get_bone_global_pose(i).basis.get_rotation_quaternion()
+		skel.set_bone_pose_rotation(i, skel.get_bone_pose_rotation(i) * (g.inverse() * q * g))
+
+	func _ready() -> void:
+		_aplicar()
+
+	func _process(delta: float) -> void:
+		_mover(delta)
+		_aplicar()
+		_manos(delta)
+
+	# ---- IK de dos huesos: las manos van a la empuñadura del arma ----
+	func preparar_ik() -> void:
+		for lado in ["Right", "Left"]:
+			var u := skel.find_bone(lado + "Arm")
+			var l := skel.find_bone(lado + "ForeArm")
+			var h := skel.find_bone(lado + "Hand")
+			if u < 0 or l < 0 or h < 0:
+				continue
+			var pu := skel.get_bone_global_rest(u).origin
+			var pl := skel.get_bone_global_rest(l).origin
+			var ph_ := skel.get_bone_global_rest(h).origin
+			# el codo hacia abajo, un poco hacia fuera y hacia atrás (espacio del .glb, que mira a +Z)
+			var fuera := -1.0 if lado == "Right" else 1.0
+			ik.append([u, l, h, pu.distance_to(pl), pl.distance_to(ph_), Vector3(0.45 * fuera, -1.0, -0.35), lado])
+
+	# Punto (en el mundo) que tiene que agarrar cada mano
+	func _objetivos() -> Array:
+		var pj = root.get_parent()
+		var ref: Node3D = null
+		if pj != null and "gun_holder" in pj and "cur" in pj:
+			var c: int = pj.cur
+			if c == 3:
+				return []                         # granada: brazos libres
+			ref = pj.katana_pivot if c == 2 else pj.gun_holder
+		var base: Transform3D
+		if ref != null and is_instance_valid(ref):
+			base = ref.global_transform
+		else:
+			var mano: Node3D = rig.get("hand")
+			base = mano.global_transform * Transform3D(Basis(), arma_local)
+		# mano derecha en la empuñadura, la izquierda debajo sujetándola
+		var der := base * Vector3(0.0, -0.03, 0.06)
+		var izq := base * Vector3(-0.045, -0.07, 0.03)
+		return [der, izq]
+
+	func _manos(delta: float) -> void:
+		if ik.is_empty():
+			return
+		var corre := 0.0
+		if rig.has("spine"):
+			corre = clampf(-(rig["spine"] as Node3D).rotation.x / 0.78, 0.0, 1.0)
+		var pj = root.get_parent()
+		var arma: Node3D = null
+		if pj != null and "gun_holder" in pj and "third_person" in pj and "is_local" in pj:
+			if not pj.is_local or pj.third_person:
+				arma = pj.gun_holder         # en primera persona el arma no se toca
+		if arma != null:
+			arma.position = arma_local
+		var obj := _objetivos()
+		ik_k = move_toward(ik_k, 0.0 if obj.is_empty() else 1.0, 6.0 * delta)
+		if ik_k <= 0.001 or obj.is_empty():
+			return
+		var inv := skel.global_transform.affine_inverse()
+		for i in ik.size():
+			var a: Array = ik[i]
+			# corriendo, la derecha sigue con el arma y la izquierda va suelta braceando
+			var w := ik_k if a[6] == "Right" else ik_k * (1.0 - corre)
+			if w > 0.001:
+				_dos_huesos(a[0], a[1], a[2], a[3], a[4], inv * (obj[i] as Vector3), a[5], w)
+		# corriendo, el arma va pegada a la mano de verdad (el brazo no llega a donde la pone el rig)
+		if arma != null and corre > 0.0 and not ik.is_empty() and ik[0][6] == "Right":
+			var mano := skel.global_transform * skel.get_bone_global_pose(ik[0][2]).origin
+			var agarre: Vector3 = arma.global_transform.basis * Vector3(0.0, -0.03, 0.06)
+			var dentro: Vector3 = (arma.get_parent() as Node3D).to_local(mano - agarre)
+			arma.position = arma_local.lerp(dentro, corre)
+
+	func _dos_huesos(u: int, l: int, h: int, l1: float, l2: float, t: Vector3, polo: Vector3, w: float) -> void:
+		var pu := skel.get_bone_global_pose(u).origin
+		var d := t - pu
+		var dist := clampf(d.length(), absf(l1 - l2) + 0.001, (l1 + l2) * 0.999)
+		var n := d.normalized()
+		var a := (l1 * l1 + dist * dist - l2 * l2) / (2.0 * dist)
+		var hh := sqrt(maxf(0.0, l1 * l1 - a * a))
+		var pp := (polo - n * polo.dot(n)).normalized()
+		var codo := pu + n * a + pp * hh
+		var mano := pu + n * dist
+		_apuntar(u, l, codo, w)
+		_apuntar(l, h, mano, w)
+
+	# Gira el hueso b para que su hijo c quede en dirección a "hacia" (mínimo giro)
+	func _apuntar(b: int, c: int, hacia: Vector3, w: float) -> void:
+		var gb := skel.get_bone_global_pose(b)
+		var gc := skel.get_bone_global_pose(c)
+		var ahora := (gc.origin - gb.origin).normalized()
+		var quiero := (hacia - gb.origin).normalized()
+		if ahora.length() < 0.5 or quiero.length() < 0.5:
+			return
+		var giro := Quaternion(ahora, quiero) if ahora.dot(quiero) < 0.99999 else Quaternion.IDENTITY
+		var glob := giro * gb.basis.get_rotation_quaternion()
+		var padre := skel.get_bone_parent(b)
+		var pq := skel.get_bone_global_pose(padre).basis.get_rotation_quaternion() if padre >= 0 else Quaternion.IDENTITY
+		var local := pq.inverse() * glob
+		var actual := skel.get_bone_pose_rotation(b)
+		skel.set_bone_pose_rotation(b, actual.slerp(local, w))
+
+	# ---- capa 2: la animación propia ----
+	func _mover(delta: float) -> void:
+		if delta <= 0.0 or not is_instance_valid(root) or not root.is_inside_tree():
+			return
+		var p := root.global_position
+		if primero:
+			primero = false
+			last = p
+			var sg := skel.global_transform.basis.get_scale().y
+			escala = sg if sg > 0.0001 else 1.0
+		var v := (p - last) / delta
+		last = p
+		if v.length() > 40.0:
+			v = Vector3.ZERO        # teletransporte, no un paso
+		vel = vel.lerp(v, minf(1.0, 12.0 * delta))
+		t += delta
+		# velocidad en el espacio del personaje (mira a -Z)
+		var lv := root.global_transform.basis.orthonormalized().inverse() * Vector3(vel.x, 0.0, vel.z)
+		var spd := Vector2(lv.x, lv.z).length()
+		var k_obj := clampf(spd / VEL_TROTE, 0.0, 1.0) if spd > 0.4 else 0.0
+		k_mov = move_toward(k_mov, k_obj, 4.0 * delta)
+		if spd > 0.4:
+			fw = lerpf(fw, -lv.z / spd, minf(1.0, 8.0 * delta))
+			sd = lerpf(sd, lv.x / spd, minf(1.0, 8.0 * delta))
+		var dir := 1.0 if fw > -0.35 else -1.0
+		ph += dir * spd / ZANCADA * TAU * delta
+		k_aire = move_toward(k_aire, 1.0 if absf(vel.y) > 1.2 else 0.0, 6.0 * delta)
+		# cuando corre (Shift) manda la carrera del rig: la capa propia se aparta
+		var corre := 0.0
+		if rig.has("spine"):
+			corre = clampf(-(rig["spine"] as Node3D).rotation.x / 0.78, 0.0, 1.0)
+		var k := k_mov * (1.0 - corre)
+		var q := 1.0 - k_mov        # cuánto se ve la animación de estar quieto
+		var a := absf(fw)
+		extra.clear()
+		var bob := 0.0
+		var sway := 0.0
+		for i in 2:
+			var lp := ph + PI * i
+			var s := sin(lp)
+			var c := cos(lp)
+			var lado := "Left" if i == 0 else "Right"
+			var muslo := (0.12 + 0.62 * s) * k * a
+			var rodilla := -(0.25 + 1.05 * maxf(0.0, c * dir)) * k * (0.6 + 0.4 * a)
+			var abre := 0.32 * s * k * sd
+			muslo += (0.55 - 0.2 * i) * k_aire
+			rodilla -= 0.9 * k_aire
+			extra[lado + "UpLeg"] = Vector3(muslo, 0.0, abre)
+			extra[lado + "Leg"] = Vector3(rodilla, 0.0, 0.0)
+			# el pie se queda plano y hace la punta al despegar
+			extra[lado + "Foot"] = Vector3(-(muslo + rodilla) * 0.75 + 0.35 * maxf(0.0, -c * dir) * k, 0.0, -abre * 0.8)
+			extra[lado + "ToeBase"] = Vector3(-0.3 * maxf(0.0, -s) * k, 0.0, 0.0)
+		bob = (absf(sin(ph)) - 0.6) * 0.06 * k - 0.02 * k
+		sway = sin(ph) * 0.025 * k + sin(t * 0.55) * 0.012 * q
+		var respira := sin(t * 1.7)
+		extra["Hips"] = Vector3(0.0, sin(ph) * 0.14 * k * a, -sin(ph) * 0.05 * k)
+		extra["Spine"] = Vector3(-0.1 * k * fw + 0.03 * respira * q, -sin(ph) * 0.1 * k * a, sin(ph) * 0.03 * k)
+		extra["Spine2"] = Vector3(-0.025 * respira * q, -sin(ph) * 0.06 * k * a, 0.0)
+		extra["Neck"] = Vector3(0.05 * k * fw, sin(ph) * 0.08 * k * a + sin(t * 0.37) * 0.07 * q, 0.0)
+		extra["Head"] = Vector3(0.04 * k * fw + sin(t * 0.6) * 0.02 * q, sin(ph) * 0.06 * k * a + sin(t * 0.23 + 1.0) * 0.08 * q, 0.0)
+		extra["LeftShoulder"] = Vector3(0.0, 0.0, 0.03 * respira * q)
+		extra["RightShoulder"] = Vector3(0.0, 0.0, -0.03 * respira * q)
+		# brazos con el arma: botan un poco con los pasos
+		var golpe := sin(ph * 2.0) * 0.05 * k
+		extra["RightArm"] = Vector3(golpe + 0.015 * respira * q, 0.0, 0.0)
+		extra["LeftArm"] = Vector3(golpe + 0.015 * respira * q, 0.0, 0.0)
+		if hips_i >= 0:
+			var off := Vector3(-sway, bob, 0.0) / escala     # al .glb (girado): x cambia de signo
+			skel.set_bone_pose_position(hips_i, hips_pos + off)
+
+	# ---- capa 1 + 2: copiar a los huesos ----
+	func _aplicar() -> void:
+		for m: Array in map:
+			var qp := Quaternion.IDENTITY
+			if m[3] != null:
+				qp = (m[3] as Node3D).quaternion
+			var nombre := skel.get_bone_name(m[0])
+			if extra.has(nombre):
+				qp = qp * Quaternion.from_euler(extra[nombre])
+			# el giro del pivote está en el espacio del personaje: pasarlo al del .glb y sumarle la postura base
+			var q: Quaternion = (VUELTA.inverse() * qp * VUELTA) * (m[4] as Quaternion)
+			var g: Quaternion = m[2]
+			skel.set_bone_pose_rotation(m[0], (m[1] as Quaternion) * (g.inverse() * q * g))

@@ -5,7 +5,9 @@ extends Node3D
 # postura inicial y todo el movimiento se calcula aquí, hueso a hueso.
 # Cuando pierde la mitad de la vida se pincha un Ozempic: se deshincha y se
 # transforma en Super Buu (modelos/personajes/super_buu.glb), más rápido y
-# haciendo bastante más daño.
+# haciendo bastante más daño. Super Buu tiene su propio esqueleto (17 huesos:
+# Hips, Spine, Chest, Neck, Head, UpperArm/ForeArm/Hand y UpperLeg/LowerLeg/Foot
+# con _L y _R) y se anima hueso a hueso igual que Majin Bu.
 
 const U = preload("res://scripts/nucleo/util.gd")
 const Ch = preload("res://scripts/jugador/character.gd")
@@ -65,6 +67,11 @@ var glow: OmniLight3D
 var clicked := false
 var swapped := false
 var steam_cd := 0.0
+var sk2: Skeleton3D          # esqueleto de Super Buu
+var b2 := {}                 # nombre de hueso -> índice
+var point_k := 0.0           # 1 = te señala con el brazo estirado
+var point_t := 0.0
+var taunt_cd := 6.0
 
 
 func _ready() -> void:
@@ -145,7 +152,7 @@ func _process(delta: float) -> void:
 	var c := cos(walk_t) * walk_k
 	var breath := sin(t * 2.2) * 0.012
 	if fase2:
-		_anim_super(air, s, breath)
+		_anim_super(air, s, c, breath, delta)
 		return
 	_turn("spine", Vector3(lean * 0.5, 0.0, s * 0.08))
 	_turn("chest", Vector3(lean * 0.5, s * 0.15, 0.0))
@@ -297,6 +304,11 @@ func hurt(amount: float, dir: Vector3) -> void:
 		tw.tween_callback(queue_free)
 
 
+# Altura de la parte de arriba de la cabeza (para los disparos a la cabeza de player.gd)
+func altura_cabeza() -> float:
+	return 2.65 if fase2 and super_body != null else 3.0
+
+
 # ---------------- Ozempic y Super Buu ----------------
 # Empieza la transformación (en todos los PCs: el anfitrión avisa a las copias)
 func start_transform() -> void:
@@ -332,6 +344,11 @@ func start_transform() -> void:
 			super_body.scale = Vector3.ONE * SUPER_SCALE
 			super_body.visible = false
 			model.add_child(super_body)
+			var sks := super_body.find_children("*", "Skeleton3D", true, false)
+			if sks.size() > 0:
+				sk2 = sks[0]
+				for i in sk2.get_bone_count():
+					b2[sk2.get_bone_name(i)] = i
 	var game = get_tree().get_first_node_in_group("game")
 	if game:
 		game._toast("¡Majin Bu se está pinchando un Ozempic!")
@@ -427,10 +444,19 @@ func _swap() -> void:
 	super_body.scale = Vector3.ONE * SUPER_SCALE * 0.55
 	# boca nueva para el vómito
 	mouth = Node3D.new()
-	mouth.position = SUPER_MOUTH
-	super_body.add_child(mouth)
+	if sk2 != null and b2.has("Head"):
+		# pegada al hueso de la cabeza para que siga a la cabeza al moverse
+		var att := BoneAttachment3D.new()
+		att.bone_name = "Head"
+		sk2.add_child(att)
+		mouth.position = SUPER_MOUTH - sk2.get_bone_global_rest(b2["Head"]).origin
+		att.add_child(mouth)
+	else:
+		mouth.position = SUPER_MOUTH
+		super_body.add_child(mouth)
 	U.ellipsoid(mouth, Vector3(0.085, 0.1, 0.05), Vector3.ZERO, Color(0.3, 0.03, 0.08))
 	mouth.visible = false
+	point_t = 1.8      # sale señalándote
 
 
 func _end_transform() -> void:
@@ -446,18 +472,54 @@ func _end_transform() -> void:
 		glow = null
 
 
-# Super Buu no tiene huesos: se mueve entero (botes, balanceo e inclinación)
-func _anim_super(air: float, s: float, breath: float) -> void:
+# Gira un hueso de Super Buu (ángulos en el espacio del modelo: +Z = delante;
+# en reposo todos los huesos tienen giro cero, así que basta con la rotación local)
+func _rot2(bone: String, e: Vector3) -> void:
+	if b2.has(bone):
+		sk2.set_bone_pose_rotation(b2[bone], Quaternion.from_euler(e))
+
+
+# Super Buu: carrera encorvada, brazos sueltos y de vez en cuando te señala
+func _anim_super(air: float, s: float, c: float, breath: float, delta: float) -> void:
 	if super_body == null or not super_body.visible:
 		body.scale = Vector3(0.78, 0.96 + breath, 0.78) * SCALE
 		if jumping <= 0.0:
 			model.position.y = absf(s) * 0.14
 		return
-	model.rotation.x = -(0.05 + lean * 0.35 + air * 0.15)
-	model.rotation.z = s * 0.07
 	super_body.scale = Vector3(1.0 + swell * 0.1, 1.0 + breath, 1.0 + swell * 0.1) * SUPER_SCALE
 	if jumping <= 0.0:
-		model.position.y = absf(s) * 0.12
+		model.position.y = absf(s) * 0.1
+	if sk2 == null:           # modelo sin esqueleto: se mueve entero
+		model.rotation.x = -(0.05 + lean * 0.35 + air * 0.15)
+		model.rotation.z = s * 0.07
+		return
+	model.rotation = Vector3.ZERO
+	# de vez en cuando se para a señalarte
+	taunt_cd -= delta
+	if taunt_cd <= 0.0:
+		taunt_cd = randf_range(7.0, 12.0)
+		point_t = 1.4
+	point_t -= delta
+	var want := 1.0 if point_t > 0.0 and vomiting <= 0.0 and jumping <= 0.0 else 0.0
+	point_k = move_toward(point_k, want, 5.0 * delta)
+	var lift := air * 1.2 + gape * 0.4 + swell * 0.4
+	_rot2("Hips", Vector3(0.0, s * 0.12, 0.0))
+	_rot2("Spine", Vector3(0.1 + lean * 0.3, 0.0, s * 0.05))
+	_rot2("Chest", Vector3(lean * 0.3, -s * 0.15, 0.0))
+	_rot2("Neck", Vector3(lean * 0.15, 0.0, 0.0))
+	_rot2("Head", Vector3(-0.1 + lean * 0.2 + sin(t * 1.7) * 0.04, 0.0, -s * 0.05))
+	_rot2("UpperLeg_L", Vector3(-s * 0.6 - air * 0.8, 0.0, 0.0))
+	_rot2("UpperLeg_R", Vector3(s * 0.6 - air * 0.8, 0.0, 0.0))
+	_rot2("LowerLeg_L", Vector3(maxf(0.0, c) * 1.0 + air * 1.3, 0.0, 0.0))
+	_rot2("LowerLeg_R", Vector3(maxf(0.0, -c) * 1.0 + air * 1.3, 0.0, 0.0))
+	_rot2("Foot_L", Vector3(-maxf(0.0, c) * 0.4, 0.0, 0.0))
+	_rot2("Foot_R", Vector3(-maxf(0.0, -c) * 0.4, 0.0, 0.0))
+	# brazo izquierdo: en reposo está señalando; al correr lo baja y lo balancea
+	var down := (1.0 - point_k) * (1.2 - s * 0.45)
+	_rot2("UpperArm_L", Vector3(down, 0.0, lift * (1.0 - point_k)))
+	_rot2("ForeArm_L", Vector3(-0.3 * (1.0 - point_k), 0.0, 0.0))
+	_rot2("UpperArm_R", Vector3(s * 0.45 - point_k * 0.15, 0.0, -lift))
+	_rot2("ForeArm_R", Vector3(-0.25 - gape * 0.4, 0.0, 0.0))
 
 
 # Vapor rosa que le sale mientras le hace efecto

@@ -9,12 +9,14 @@ static var autostart := false     # true = al recargar la escena empieza a jugar
 
 const CONTROLS := "WASD  ·  mover\nShift  ·  correr (disparar corta la carrera)\nE (mantener)  ·  reanimar a un compañero caído (cooperativo)\nRatón  ·  mirar\nClic izquierdo  ·  disparar / atacar\nR  ·  recargar\n1 / 2 / 3  ·  cambiar de arma (3 = katana)\n4 / G  ·  granada Jan (mantén clic y suelta para lanzar)\nE  ·  comprar armas, abrir puertas y usar la caja\nF  ·  linterna\nV  ·  cámara primera / tercera persona\nF8  ·  cámara libre (partidas de un jugador)\nEsc  ·  pausa"
 const RED := Color(0.9, 0.08, 0.1)
+const HudScript = preload("res://scripts/interfaz/hud.gd")
 
 var state := 0                    # 0 menú, 1 jugando, 2 pausa
 var con_camara := false           # al empezar, entrar directamente en la cámara libre
 var layer: CanvasLayer
 var t := 0.0
-var font_bold: SystemFont
+var font_bold: Font
+var font_title: Font
 
 # Fondo 3D
 var bg_container: SubViewportContainer
@@ -80,9 +82,8 @@ var snd_drone: AudioStreamPlayer
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Ch.load_skin()
-	font_bold = SystemFont.new()
-	font_bold.font_names = PackedStringArray(["Impact", "Arial Black", "Arial", "DejaVu Sans"])
-	font_bold.font_weight = 800
+	font_bold = HudScript.fuente(HudScript.F_NUM)
+	font_title = load("res://fuentes/Creepster-Regular.ttf") if ResourceLoader.exists("res://fuentes/Creepster-Regular.ttf") else font_bold
 	layer = CanvasLayer.new()
 	layer.layer = 50
 	add_child(layer)
@@ -176,6 +177,9 @@ func _input(event: InputEvent) -> void:
 		elif event is InputEventMouseMotion and dragging:
 			custom_rot += event.relative.x * 0.01
 	if event is InputEventKey and event.pressed and not event.echo:
+		var con = get_parent().get("consola")
+		if con != null and con.abierta:
+			return      # escribiendo en la consola (la P no pausa)
 		if event.keycode == KEY_ESCAPE or event.keycode == KEY_P:
 			if lobby_root.visible:
 				_lobby_leave()
@@ -531,18 +535,31 @@ func _build_background() -> void:
 # Construcción de la interfaz
 # =============================================================
 func _style_button(b: Button, size: Vector2, font_size: int) -> void:
+	# placas inclinadas con una franja roja a la izquierda (como el HUD)
+	var ancho := size.x >= 200.0
 	var n := StyleBoxFlat.new()
-	n.bg_color = Color(0.08, 0.02, 0.03, 0.85)
-	n.border_color = Color(0.6, 0.05, 0.08)
-	n.set_border_width_all(3)
-	n.set_corner_radius_all(8)
-	n.shadow_color = Color(0, 0, 0, 0.6)
-	n.shadow_size = 6
+	n.bg_color = Color(0.05, 0.02, 0.025, 0.82)
+	n.border_color = Color(0.75, 0.06, 0.09)
+	n.set_border_width_all(0)
+	n.border_width_left = 6 if ancho else 0
+	n.border_width_bottom = 0 if ancho else 2
+	n.set_corner_radius_all(2)
+	n.skew = Vector2(0.22, 0.0) if ancho else Vector2.ZERO
+	n.content_margin_left = 30 if ancho else 4
+	n.content_margin_right = 12 if ancho else 4
+	n.shadow_color = Color(0, 0, 0, 0.55)
+	n.shadow_size = 8
+	n.shadow_offset = Vector2(3, 4)
 	var h: StyleBoxFlat = n.duplicate()
-	h.bg_color = Color(0.55, 0.04, 0.07, 0.95)
-	h.border_color = Color(1.0, 0.35, 0.3)
+	h.bg_color = Color(0.62, 0.04, 0.07, 0.94)
+	h.border_color = Color(1.0, 0.82, 0.36)
+	h.border_width_left = 10 if ancho else 0
+	h.content_margin_left = 40 if ancho else 4
 	var p: StyleBoxFlat = h.duplicate()
 	p.bg_color = Color(0.9, 0.12, 0.14)
+	if ancho:
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	font_size = int(font_size * 1.18)
 	b.add_theme_stylebox_override("normal", n)
 	b.add_theme_stylebox_override("hover", h)
 	b.add_theme_stylebox_override("pressed", p)
@@ -550,7 +567,10 @@ func _style_button(b: Button, size: Vector2, font_size: int) -> void:
 	b.add_theme_font_override("font", font_bold)
 	b.add_theme_font_size_override("font_size", font_size)
 	b.add_theme_color_override("font_color", Color(0.95, 0.92, 0.9))
-	b.add_theme_color_override("font_hover_color", Color(1.0, 0.9, 0.4))
+	b.add_theme_color_override("font_hover_color", Color(1.0, 0.86, 0.45))
+	b.add_theme_color_override("font_focus_color", Color(1.0, 0.86, 0.45))
+	b.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
+	b.add_theme_constant_override("outline_size", 4)
 	b.custom_minimum_size = size
 	b.pivot_offset = size * 0.5
 	b.mouse_entered.connect(func():
@@ -561,7 +581,7 @@ func _style_button(b: Button, size: Vector2, font_size: int) -> void:
 		create_tween().tween_property(b, "scale", Vector2.ONE, 0.12))
 
 
-func _button(parent: Node, text: String, cb: Callable, size := Vector2(360, 62), font_size := 30) -> Button:
+func _button(parent: Node, text: String, cb: Callable, size := Vector2(360, 54), font_size := 30) -> Button:
 	var b := Button.new()
 	b.text = text
 	_style_button(b, size, font_size)
@@ -588,10 +608,11 @@ func _label(parent: Node, text: String, size: int, col: Color, bold: bool = fals
 
 func _panel_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.05, 0.02, 0.03, 0.9)
-	s.border_color = Color(0.7, 0.06, 0.09)
-	s.set_border_width_all(3)
-	s.set_corner_radius_all(14)
+	s.bg_color = Color(0.035, 0.02, 0.03, 0.92)
+	s.border_color = Color(0.75, 0.06, 0.09)
+	s.set_border_width_all(1)
+	s.border_width_top = 4
+	s.set_corner_radius_all(4)
 	s.set_content_margin_all(22)
 	s.shadow_color = Color(0, 0, 0, 0.7)
 	s.shadow_size = 14
@@ -663,8 +684,9 @@ func _build_menu() -> void:
 	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title_lbl.size = Vector2(690, 210)
 	title_lbl.pivot_offset = Vector2(345, 105)
-	title_lbl.add_theme_font_override("font", font_bold)
-	title_lbl.add_theme_font_size_override("font_size", 86)
+	title_lbl.add_theme_font_override("font", font_title)
+	title_lbl.add_theme_font_size_override("font_size", 92)
+	title_lbl.add_theme_constant_override("line_spacing", -18)
 	title_lbl.add_theme_color_override("font_color", RED)
 	title_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	title_lbl.add_theme_constant_override("outline_size", 22)
@@ -678,7 +700,7 @@ func _build_menu() -> void:
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sub.position = Vector2(0, 222)
 	sub.size = Vector2(690, 40)
-	sub.add_theme_font_size_override("font_size", 22)
+	sub.add_theme_font_size_override("font_size", 24)
 	sub.add_theme_color_override("font_color", Color(0.9, 0.85, 0.85))
 	sub.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	sub.add_theme_constant_override("outline_size", 6)
@@ -689,9 +711,9 @@ func _build_menu() -> void:
 	buttons_box.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
 	buttons_box.offset_left = -565.0
 	buttons_box.offset_right = -205.0
-	buttons_box.offset_top = -60.0
-	buttons_box.offset_bottom = 340.0
-	buttons_box.add_theme_constant_override("separation", 16)
+	buttons_box.offset_top = -56.0
+	buttons_box.offset_bottom = 320.0
+	buttons_box.add_theme_constant_override("separation", 10)
 	menu_root.add_child(buttons_box)
 	menu_buttons.append(_button(buttons_box, "JUGAR", _start_game))
 	menu_buttons.append(_button(buttons_box, "MULTIJUGADOR", _show_net))

@@ -1,7 +1,8 @@
 extends Node3D
-# Disparo de la Pistola Rayo: bola de energía verde que vuela hacia donde apuntas
-# (también hacia arriba o hacia el suelo) y explota al chocar. La explosión daña a
-# todos los enemigos cercanos, pero nunca al jugador que ha disparado.
+# Proyectil que explota al chocar: la bola verde de la Pistola Rayo, el cohete del
+# lanzacohetes o el virote de la ballesta ("proj" en weapons.gd). Vuela hacia donde
+# apuntas (también hacia arriba o hacia el suelo). La explosión daña a todos los
+# enemigos cercanos, pero nunca al jugador que ha disparado.
 
 const U = preload("res://scripts/nucleo/util.gd")
 const W = preload("res://scripts/jugador/weapons.gd")
@@ -16,19 +17,43 @@ var splash_dmg := 14.0
 var splash_r := 3.0
 var done := false
 var game
+var arma := "pistola_rayo"
+var color := Color(0.3, 1.0, 0.45)
+var humo_t := 0.0
 
 
 func _ready() -> void:
 	game = get_tree().get_first_node_in_group("game")
-	var d: Dictionary = W.DATA["pistola_rayo"]
+	var d: Dictionary = W.DATA.get(arma, W.DATA["pistola_rayo"])
 	direct_dmg = d["dmg"]
 	splash_dmg = d["splash_dmg"]
 	splash_r = d["splash_r"]
-	U.sphere(self, 0.13, Vector3.ZERO, Color(0.3, 1.0, 0.45), true)
-	var core := U.sphere(self, 0.07, Vector3.ZERO, Color(0.9, 1.0, 0.9), true)
-	core.material_override.emission_energy_multiplier = 3.0
+	match str(d.get("proj", "energia")):
+		"cohete":
+			color = Color(1.0, 0.55, 0.15)
+			var cuerpo := Node3D.new()
+			add_child(cuerpo)
+			if vel.length() > 0.1 and absf(vel.normalized().y) < 0.99:
+				cuerpo.basis = Basis.looking_at(vel.normalized(), Vector3.UP)
+			U.tube(cuerpo, 0.045, 0.4, Vector3(0, 0, 0.05), U.mat(Color(0.35, 0.38, 0.3)))
+			var cab := U.cone_m(cuerpo, 0.0, 0.045, 0.14, Vector3(0, 0, -0.22), U.mat(Color(0.3, 0.3, 0.32)))
+			cab.rotation_degrees.x = -90.0
+			var fuego := U.sphere(cuerpo, 0.08, Vector3(0, 0, 0.3), Color(1.0, 0.7, 0.2), true)
+			fuego.material_override.emission_energy_multiplier = 4.0
+		"virote":
+			color = Color(1.0, 0.5, 0.15)
+			var cuerpo := Node3D.new()
+			add_child(cuerpo)
+			if vel.length() > 0.1 and absf(vel.normalized().y) < 0.99:
+				cuerpo.basis = Basis.looking_at(vel.normalized(), Vector3.UP)
+			U.tube(cuerpo, 0.008, 0.45, Vector3.ZERO, U.mat(Color(0.5, 0.4, 0.3)))
+			U.sphere(cuerpo, 0.025, Vector3(0, 0, -0.23), Color(1.0, 0.45, 0.1), true)
+		_:
+			U.sphere(self, 0.13, Vector3.ZERO, Color(0.3, 1.0, 0.45), true)
+			var core := U.sphere(self, 0.07, Vector3.ZERO, Color(0.9, 1.0, 0.9), true)
+			core.material_override.emission_energy_multiplier = 3.0
 	var l := OmniLight3D.new()
-	l.light_color = Color(0.3, 1.0, 0.45)
+	l.light_color = color
 	l.light_energy = 2.5
 	l.omni_range = 4.0
 	add_child(l)
@@ -73,6 +98,18 @@ func _physics_process(delta: float) -> void:
 		_explode(Vector3(to.x, maxf(to.y, 0.05), to.z))
 		return
 	global_position = to
+	# estela de humo del cohete
+	if arma == "lanzacohetes":
+		humo_t -= delta
+		if humo_t <= 0.0:
+			humo_t = 0.03
+			var h := U.sphere(get_parent(), 0.12, global_position, Color(0.7, 0.7, 0.7, 0.5))
+			h.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			h.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var tw := h.create_tween().set_parallel(true)
+			tw.tween_property(h, "scale", Vector3.ONE * 3.0, 0.7)
+			tw.tween_property(h.material_override, "albedo_color:a", 0.0, 0.7)
+			tw.chain().tween_callback(h.queue_free)
 
 
 func _explode(pos: Vector3) -> void:
@@ -81,7 +118,7 @@ func _explode(pos: Vector3) -> void:
 	for c in get_children():
 		c.queue_free()
 	# bola verde que se expande y se desvanece
-	var s := U.sphere(get_parent(), 1.0, pos, Color(0.35, 1.0, 0.5, 0.75), true)
+	var s := U.sphere(get_parent(), 1.0, pos, Color(color.r, color.g, color.b, 0.75), true)
 	s.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	s.material_override.emission_energy_multiplier = 2.5
 	s.scale = Vector3.ONE * 0.2
@@ -90,14 +127,14 @@ func _explode(pos: Vector3) -> void:
 	tw.tween_property(s.material_override, "albedo_color:a", 0.0, 0.35)
 	tw.chain().tween_callback(s.queue_free)
 	var l := OmniLight3D.new()
-	l.light_color = Color(0.3, 1.0, 0.45)
+	l.light_color = color
 	l.light_energy = 8.0
 	l.omni_range = splash_r * 2.5
 	get_parent().add_child(l)
 	l.global_position = pos + Vector3(0, 0.3, 0)
 	l.create_tween().tween_property(l, "light_energy", 0.0, 0.35).finished.connect(l.queue_free)
 	var snd := AudioStreamPlayer3D.new()
-	snd.stream = U.make_shot(0.45, true)
+	snd.stream = U.make_shot(0.7 if arma == "lanzacohetes" else 0.45, true)
 	snd.unit_size = 10.0
 	get_parent().add_child(snd)
 	snd.global_position = pos
@@ -105,7 +142,7 @@ func _explode(pos: Vector3) -> void:
 	snd.finished.connect(snd.queue_free)
 	# marca quemada en el suelo
 	if pos.y < 0.3:
-		var mark := U.cylinder(get_parent(), splash_r * 0.35, 0.01, Vector3(pos.x, 0.012, pos.z), Color(0.08, 0.2, 0.1))
+		var mark := U.cylinder(get_parent(), splash_r * 0.35, 0.01, Vector3(pos.x, 0.012, pos.z), Color(0.08, 0.2, 0.1) if arma == "pistola_rayo" else Color(0.06, 0.05, 0.05))
 		get_tree().create_timer(4.0).timeout.connect(mark.queue_free)
 
 	if not visual_only:

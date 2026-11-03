@@ -1,10 +1,10 @@
 extends CanvasLayer
-# HUD de la partida, estilo "zombies": placas oscuras inclinadas, números grandes
-# con la fuente Bebas Neue y textos en Barlow Condensed (las dos en fuentes/).
-#   arriba izq.  placa de puntos (con "+60" que salen volando), bajas y dónde está la caja
-#   abajo izq.   oleada en rojo sangre, barra de vida por tramos, aguante y habilidades
-#   abajo der.   placa del arma: munición, balas del cargador, recarga y granadas Jan
-#   centro       mira con marcador de impacto, avisos y mensajes grandes
+# HUD de la partida, minimalista: sin placas ni marcos, solo números y líneas finas
+# pegados a las esquinas (Bebas Neue para los números, Barlow Condensed para textos).
+#   arriba izq.  puntos (con "+60" que salen volando) y, en pequeño, bajas y la caja
+#   abajo izq.   oleada en rojo, bebidas, y una línea fina de vida (y otra de aguante)
+#   abajo der.   munición, nombre del arma, granadas Jan y una línea de recarga
+#   centro       mira pequeña con marcador de impacto, avisos y mensajes
 #   con poca vida los bordes de la pantalla laten en rojo
 # main.gd sigue escribiendo en msg / prompt / small_lbl / dmg_rect como antes.
 
@@ -54,6 +54,7 @@ var pill_text: RichTextLabel
 var hint: RichTextLabel
 var cross: Crosshair
 var low_rect: ColorRect
+var tele: Control           # pantalla de la mira telescópica
 
 var shown_points := 0.0
 var last_points := -1
@@ -77,22 +78,20 @@ class Crosshair extends Control:
 
 	func _draw() -> void:
 		var c := (size / 2.0).round()
-		var gap := 5.0
-		var ln := 7.0
+		var gap := 3.0
+		var ln := 4.0
 		for d in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
-			draw_line(c + d * gap, c + d * (gap + ln), Color(0, 0, 0, 0.6), 4.0)
-			draw_line(c + d * gap, c + d * (gap + ln), Color(1, 1, 1, 0.95), 2.0)
-		draw_circle(c, 2.2, Color(0, 0, 0, 0.6))
-		draw_circle(c, 1.4, Color(1, 1, 1, 0.95))
+			draw_line(c + d * gap, c + d * (gap + ln), Color(0, 0, 0, 0.3), 2.5)
+			draw_line(c + d * gap, c + d * (gap + ln), Color(1, 1, 1, 0.75), 1.2)
+		draw_circle(c, 1.0, Color(1, 1, 1, 0.8))
 		if hit_t > 0.0:
 			var a := hit_t / 0.25
-			var col := Color(1.0, 0.18, 0.12, a) if kill else Color(1, 1, 1, a)
-			var r0 := 9.0
-			var r1 := (18.0 if kill else 14.0) + (1.0 - a) * 3.0
+			var col := Color(1.0, 0.25, 0.2, a) if kill else Color(1, 1, 1, a * 0.9)
+			var r0 := 6.0
+			var r1 := (11.0 if kill else 9.0) + (1.0 - a) * 2.0
 			for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
 				var n: Vector2 = d.normalized()
-				draw_line(c + n * r0, c + n * r1, Color(0, 0, 0, a * 0.6), 5.0 if kill else 4.0)
-				draw_line(c + n * r0, c + n * r1, col, 3.0 if kill else 2.0)
+				draw_line(c + n * r0, c + n * r1, col, 2.0 if kill else 1.5)
 
 
 func _ready() -> void:
@@ -105,6 +104,14 @@ func _ready() -> void:
 	dmg_rect = _vineta(Color(0.75, 0.0, 0.02))
 	# latido rojo cuando te queda poca vida
 	low_rect = _vineta(Color(0.55, 0.0, 0.0))
+
+	# mira telescópica del francotirador (al apuntar)
+	tele = Control.new()
+	tele.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	tele.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tele.visible = false
+	tele.draw.connect(_draw_tele)
+	add_child(tele)
 
 	_build_top_left()
 	_build_bottom_left()
@@ -181,20 +188,13 @@ func _ctrl(parent: Node, pos: Vector2, sz: Vector2, dibujo: Callable) -> Control
 # Panel oscuro para los demás menús y avisos (consola, misión, pádel, bebidas...)
 static func panel_style(alpha := 0.55) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.035, 0.03, 0.045, alpha)
-	s.border_color = Color(1, 1, 1, 0.09)
-	s.set_border_width_all(1)
-	s.border_width_left = 3
-	s.border_color = Color(1, 1, 1, 0.09)
-	s.set_corner_radius_all(6)
-	s.corner_radius_top_left = 2
-	s.corner_radius_bottom_left = 2
-	s.content_margin_left = 16
+	s.bg_color = Color(0.02, 0.02, 0.025, alpha * 0.6)
+	s.set_border_width_all(0)
+	s.set_corner_radius_all(4)
+	s.content_margin_left = 14
 	s.content_margin_right = 14
 	s.content_margin_top = 8
 	s.content_margin_bottom = 8
-	s.shadow_color = Color(0, 0, 0, 0.35 * alpha)
-	s.shadow_size = 6
 	return s
 
 
@@ -218,79 +218,74 @@ static func placa(c: CanvasItem, r: Rect2, col: Color, acento: Color, hacia_izq 
 
 func _build_top_left() -> void:
 	var root := Control.new()
-	root.position = Vector2(22, 16)
+	root.position = Vector2(20, 14)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
-	pts_plate = _ctrl(root, Vector2.ZERO, Vector2(270, 74), func(c: Control):
-		placa(c, Rect2(Vector2.ZERO, c.size), PLATE, GOLD))
-	var cap := _lbl(root, 15, Color(GOLD, 0.75), font_bold, 0)
-	cap.text = "PUNTOS"
-	cap.add_theme_constant_override("shadow_offset_x", 0)
-	cap.position = Vector2(24, 4)
-	points_lbl = _lbl(root, 54, GOLD, font_num, 6)
-	points_lbl.position = Vector2(22, 14)
-	info_lbl = _lbl(root, 18, MUTED, font_ui, 4)
-	info_lbl.position = Vector2(14, 80)
+	points_lbl = _sombra(_lbl(root, 26, Color(1.0, 0.9, 0.62, 0.9), font_num, 0))
+	info_lbl = _sombra(_lbl(root, 13, Color(1, 1, 1, 0.42), font_ui, 0))
+	info_lbl.position = Vector2(1, 28)
 	mates_box = VBoxContainer.new()
-	mates_box.position = Vector2(14, 128)
-	mates_box.add_theme_constant_override("separation", 2)
+	mates_box.position = Vector2(1, 48)
+	mates_box.add_theme_constant_override("separation", 0)
 	root.add_child(mates_box)
+
+
+# Sin contorno: solo una sombra suave para que se lea sobre cualquier fondo
+func _sombra(l: Label) -> Label:
+	l.add_theme_constant_override("outline_size", 0)
+	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.55))
+	l.add_theme_constant_override("shadow_offset_x", 0)
+	l.add_theme_constant_override("shadow_offset_y", 1)
+	l.add_theme_constant_override("shadow_outline_size", 6)
+	return l
 
 
 func _build_bottom_left() -> void:
 	var root := Control.new()
-	_anchor(root, Control.PRESET_BOTTOM_LEFT, Vector2(22, -172))
+	_anchor(root, Control.PRESET_BOTTOM_LEFT, Vector2(20, -104))
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
-	round_cap = _lbl(root, 16, Color(1.0, 0.55, 0.5, 0.9), font_bold, 4)
-	round_cap.text = "OLEADA"
-	round_cap.position = Vector2(6, -8)
-	round_lbl = _lbl(root, 112, RED, font_num, 10)
-	round_lbl.add_theme_color_override("font_outline_color", Color(0.12, 0.0, 0.0, 0.95))
-	round_lbl.add_theme_color_override("font_shadow_color", Color(0.9, 0.0, 0.0, 0.35))
-	round_lbl.add_theme_constant_override("shadow_offset_x", 0)
-	round_lbl.add_theme_constant_override("shadow_offset_y", 0)
-	round_lbl.add_theme_constant_override("shadow_outline_size", 16)
-	round_lbl.position = Vector2(-2, 12)
-	round_lbl.pivot_offset = Vector2(36, 80)
-	# habilidades de la tienda (con tiempo) encima de la vida
+	round_cap = Label.new()        # ya no se enseña ("OLEADA" sobra)
+	round_cap.visible = false
+	root.add_child(round_cap)
+	round_lbl = _sombra(_lbl(root, 40, Color(RED, 0.9), font_num, 0))
+	round_lbl.position = Vector2(-1, 0)
+	round_lbl.pivot_offset = Vector2(12, 26)
+	# habilidades de la tienda (con tiempo), encima de la oleada
 	perks_box = HBoxContainer.new()
-	perks_box.position = Vector2(154, 22)
-	perks_box.add_theme_constant_override("separation", 6)
+	perks_box.position = Vector2(0, -14)
+	perks_box.add_theme_constant_override("separation", 12)
 	root.add_child(perks_box)
-	# las bebidas (bebidas.gd) van en la fila de en medio, a la misma altura que aquí y=56
-	# vida
-	hp_bar = _ctrl(root, Vector2(150, 98), Vector2(300, 24), func(_c: Control): _draw_hp())
-	hp_lbl = _lbl(root, 19, Color(1, 1, 1, 0.95), font_bold, 4)
-	hp_lbl.position = Vector2(166, 97)
-	stam_bar = _ctrl(root, Vector2(144, 128), Vector2(260, 7), func(_c: Control): _draw_stamina())
+	# las bebidas (bebidas.gd) van en una fila entre la oleada y la vida
+	# vida: una línea fina con el número al lado
+	hp_bar = _ctrl(root, Vector2(0, 78), Vector2(140, 2), func(_c: Control): _draw_hp())
+	hp_lbl = _sombra(_lbl(root, 12, Color(1, 1, 1, 0.6), font_ui, 0))
+	hp_lbl.position = Vector2(150, 70)
+	stam_bar = _ctrl(root, Vector2(0, 83), Vector2(140, 1), func(_c: Control): _draw_stamina())
 
 
 func _build_bottom_right() -> void:
 	var root := Control.new()
-	_anchor(root, Control.PRESET_BOTTOM_RIGHT, Vector2(-22, -22))
+	_anchor(root, Control.PRESET_BOTTOM_RIGHT, Vector2(-20, -16))
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
-	wpn_plate = _ctrl(root, Vector2(-360, -128), Vector2(360, 128), func(c: Control):
-		placa(c, Rect2(Vector2.ZERO, c.size), PLATE, Color(1, 1, 1, 0.85), true))
-	wpn_name = _lbl(root, 21, Color(1, 1, 1, 0.95), font_bold, 4)
+	wpn_name = _sombra(_lbl(root, 11, Color(1, 1, 1, 0.45), font_bold, 0))
 	wpn_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	wpn_name.position = Vector2(-372, -124)
-	wpn_name.size = Vector2(350, 26)
-	mag_lbl = _lbl(root, 78, Color(1, 1, 1), font_num, 7)
+	wpn_name.position = Vector2(-250, -50)
+	wpn_name.size = Vector2(250, 14)
+	mag_lbl = _sombra(_lbl(root, 30, Color(1, 1, 1, 0.88), font_num, 0))
 	mag_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	mag_lbl.position = Vector2(-372, -108)
-	mag_lbl.size = Vector2(270, 84)
-	res_lbl = _lbl(root, 36, MUTED, font_num, 5)
-	res_lbl.position = Vector2(-96, -78)
-	dmg_lbl = _lbl(root, 15, MUTED, font_ui, 3)
-	dmg_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	dmg_lbl.position = Vector2(-372, -152)
-	dmg_lbl.size = Vector2(350, 20)
-	# balas del cargador y barra de recarga
-	pips = _ctrl(root, Vector2(-330, -30), Vector2(300, 10), func(_c: Control): _draw_pips())
-	# granadas Jan: bolitas + tecla
-	jan_box = _ctrl(root, Vector2(-330, -128), Vector2(120, 26), func(_c: Control): _draw_jan())
+	mag_lbl.position = Vector2(-250, -40)
+	mag_lbl.size = Vector2(214, 36)
+	res_lbl = _sombra(_lbl(root, 16, Color(1, 1, 1, 0.4), font_num, 0))
+	res_lbl.position = Vector2(-34, -25)
+	dmg_lbl = Label.new()          # el daño ya no se enseña
+	dmg_lbl.visible = false
+	root.add_child(dmg_lbl)
+	# línea fina: balas que quedan en el cargador o progreso de la recarga
+	pips = _ctrl(root, Vector2(-110, -3), Vector2(110, 1), func(_c: Control): _draw_pips())
+	# granadas Jan: cuatro puntitos a la izquierda de la línea de munición
+	jan_box = _ctrl(root, Vector2(-150, -12), Vector2(36, 18), func(_c: Control): _draw_jan())
 
 
 func _build_center() -> void:
@@ -299,14 +294,17 @@ func _build_center() -> void:
 	cross.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(cross)
 
-	msg = _lbl(self, 56, Color(1, 1, 1), font_num, 12)
+	msg = _sombra(_lbl(self, 30, Color(1, 1, 1, 0.92), font_num, 0))
+	msg.add_theme_constant_override("shadow_outline_size", 10)
+	msg.add_theme_constant_override("line_spacing", -2)
+	msg.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
 	msg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	msg.offset_bottom = -330.0
 	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	msg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	msg.add_theme_constant_override("line_spacing", -6)
 
-	small_lbl = _lbl(self, 23, Color(0.8, 0.92, 1.0), font_ui, 5)
+	small_lbl = _sombra(_lbl(self, 15, Color(0.88, 0.94, 1.0, 0.85), font_ui, 0))
 	small_lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	small_lbl.offset_top = 80.0
 	small_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -317,15 +315,7 @@ func _build_center() -> void:
 	prompt.visible = false
 	add_child(prompt)
 	pill = PanelContainer.new()
-	var ps := panel_style(0.75)
-	ps.border_color = Color(GOLD, 0.8)
-	ps.border_width_left = 0
-	ps.border_width_bottom = 2
-	ps.set_corner_radius_all(4)
-	ps.content_margin_left = 14
-	ps.content_margin_right = 14
-	ps.content_margin_top = 6
-	ps.content_margin_bottom = 6
+	var ps := StyleBoxEmpty.new()
 	pill.add_theme_stylebox_override("panel", ps)
 	pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pill.visible = false
@@ -337,8 +327,12 @@ func _build_center() -> void:
 	pill_text.scroll_active = false
 	pill_text.add_theme_font_override("normal_font", font_ui)
 	pill_text.add_theme_font_override("bold_font", font_bold)
-	pill_text.add_theme_font_size_override("normal_font_size", 22)
-	pill_text.add_theme_font_size_override("bold_font_size", 22)
+	pill_text.add_theme_font_size_override("normal_font_size", 15)
+	pill_text.add_theme_font_size_override("bold_font_size", 15)
+	pill_text.add_theme_color_override("default_color", Color(1, 1, 1, 0.8))
+	pill_text.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	pill_text.add_theme_constant_override("shadow_outline_size", 6)
+	pill_text.add_theme_constant_override("shadow_offset_y", 1)
 	pill_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pill.add_child(pill_text)
 
@@ -350,73 +344,70 @@ func _build_center() -> void:
 	hint.autowrap_mode = TextServer.AUTOWRAP_OFF
 	hint.add_theme_font_override("normal_font", font_ui)
 	hint.add_theme_font_override("bold_font", font_bold)
-	hint.add_theme_font_size_override("normal_font_size", 15)
-	hint.add_theme_font_size_override("bold_font_size", 14)
-	hint.add_theme_color_override("default_color", Color(0.9, 0.9, 0.92, 0.85))
-	hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	hint.add_theme_constant_override("outline_size", 4)
+	hint.add_theme_font_size_override("normal_font_size", 12)
+	hint.add_theme_font_size_override("bold_font_size", 12)
+	hint.add_theme_color_override("default_color", Color(1, 1, 1, 0.35))
+	hint.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	hint.add_theme_constant_override("shadow_outline_size", 5)
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var teclas := [["WASD", "mover"], ["Shift", "correr"], ["Clic", "disparar"], ["R", "recargar"],
+	var teclas := [["WASD", "mover"], ["Shift", "correr"], ["Clic", "disparar"], ["Clic der.", "apuntar"], ["R", "recargar"],
 		["1-3", "armas"], ["4", "Jan"], ["E", "usar"], ["F", "linterna"], ["V", "cámara"],
 		["F8", "cámara libre"], ["º", "consola"], ["Esc", "pausa"]]
+	if _hay_mando():
+		teclas = [["RT", "disparar"], ["LT", "apuntar"], ["L3", "correr"], ["A", "usar"], ["X", "recargar"], ["Y", "cambiar arma"],
+			["B", "katana"], ["LB", "Jan"], ["R3", "linterna"], ["Select", "cámara"], ["Start", "pausa"]]
 	var txt := "[center]"
 	for k in teclas:
 		txt += _tecla(k[0]) + " " + k[1] + "   "
 	hint.text = txt.strip_edges() + "[/center]"
 	hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	hint.offset_top = -30.0
+	hint.offset_top = -22.0
 	hint.offset_bottom = -6.0
 	hint.offset_left = 120.0
 	hint.offset_right = -120.0
 	add_child(hint)
 	var tw := hint.create_tween()
-	tw.tween_interval(14.0)
+	tw.tween_interval(8.0)
 	tw.tween_property(hint, "modulate:a", 0.0, 1.5)
 
 
 static func _tecla(k: String) -> String:
-	return "[bgcolor=#ffffff2e][color=#ffffff][b] %s [/b][/color][/bgcolor]" % k
+	return "[color=#ffffffcc][b]%s[/b][/color]" % k
 
 
 # ---------------- dibujo ----------------
-# Barra de vida inclinada, partida en tramos de 25, con el daño reciente en blanco
+# Vida: línea fina blanca (roja con poca vida) y el daño reciente en rojo oscuro
 func _draw_hp() -> void:
 	var p = game.player
 	var maxv: float = p.max_hp if p != null else 100.0
+	var w := hp_bar.size.x * clampf(maxv / 100.0, 1.0, 1.6)
 	var h := hp_bar.size.y
-	var full := clampf(hp_bar.size.x * maxv / 100.0 * 0.8, 160.0, 420.0)
-	var k := SKEW * 0.6
-	var fondo := PackedVector2Array([Vector2(k, 0), Vector2(full + k, 0), Vector2(full, h), Vector2(0, h)])
-	hp_bar.draw_colored_polygon(fondo, Color(0, 0, 0, 0.6))
-	var inner := full - 4.0
+	hp_bar.draw_rect(Rect2(0, 0, w, h), Color(1, 1, 1, 0.14))
 	var a := clampf(hp_lag / maxv, 0.0, 1.0)
 	var b := clampf(hp_shown / maxv, 0.0, 1.0)
-	var col := Color(0.92, 0.14, 0.1).lerp(Color(0.3, 0.92, 0.42), clampf((b - 0.2) / 0.55, 0.0, 1.0))
+	hp_bar.draw_rect(Rect2(0, 0, w * a, h), Color(0.75, 0.1, 0.1, 0.8))
+	var col := Color(1, 1, 1, 0.92)
 	if b < 0.35:
-		col = col.lerp(Color(1, 0.55, 0.5), (sin(t * 9.0) * 0.5 + 0.5) * 0.4)
-	_tramo(2.0, inner * a, h, Color(1, 1, 1, 0.75))
-	_tramo(2.0, inner * b, h, col)
-	# brillo arriba
-	if b > 0.0:
-		_tramo(2.0, inner * b, h * 0.35, Color(1, 1, 1, 0.18), 2.0)
-	# separaciones cada 25 de vida
-	var n := int(maxv / 25.0)
-	for i in range(1, n):
-		var x := 2.0 + inner * float(i) / float(n)
-		hp_bar.draw_line(Vector2(x + k * 0.9, 2), Vector2(x, h - 2), Color(0, 0, 0, 0.55), 2.0)
+		col = Color(1.0, 0.25, 0.2).lerp(Color(1, 0.6, 0.55), (sin(t * 9.0) * 0.5 + 0.5) * 0.5)
+	hp_bar.draw_rect(Rect2(0, 0, w * b, h), col)
+	hp_lbl.position.x = w + 10.0
 
 
-func _tramo(x0: float, w: float, h: float, col: Color, y0 := 2.0) -> void:
-	if w <= 0.5:
-		return
-	var k := SKEW * 0.6 * (h - 2.0) / hp_bar.size.y
-	var y1 := minf(y0 + h - 4.0, hp_bar.size.y - 2.0)
-	var s := SKEW * 0.6 / hp_bar.size.y
-	var pts := PackedVector2Array([
-		Vector2(x0 + (hp_bar.size.y - y0) * s, y0), Vector2(x0 + w + (hp_bar.size.y - y0) * s, y0),
-		Vector2(x0 + w + (hp_bar.size.y - y1) * s, y1), Vector2(x0 + (hp_bar.size.y - y1) * s, y1)])
-	if k >= 0.0:
-		hp_bar.draw_colored_polygon(pts, col)
+# Mira telescópica: todo negro menos un círculo, con su retícula fina
+func _draw_tele() -> void:
+	var s := tele.size
+	var c := s / 2.0
+	var r := minf(s.x, s.y) * 0.46
+	var lejos := c.length() - r + 4.0
+	tele.draw_arc(c, r + lejos / 2.0, 0.0, TAU, 128, Color(0, 0, 0, 1), lejos, true)
+	tele.draw_arc(c, r + 2.0, 0.0, TAU, 128, Color(0.05, 0.05, 0.05, 1), 6.0, true)
+	var ret := Color(0, 0, 0, 0.85)
+	tele.draw_line(Vector2(c.x - r, c.y), Vector2(c.x + r, c.y), ret, 1.0)
+	tele.draw_line(Vector2(c.x, c.y - r), Vector2(c.x, c.y + r), ret, 1.0)
+	tele.draw_line(Vector2(c.x - r, c.y), Vector2(c.x - r * 0.15, c.y), ret, 3.0)
+	tele.draw_line(Vector2(c.x + r * 0.15, c.y), Vector2(c.x + r, c.y), ret, 3.0)
+	tele.draw_line(Vector2(c.x, c.y + r * 0.15), Vector2(c.x, c.y + r), ret, 3.0)
+	tele.draw_circle(c, 1.5, Color(1.0, 0.2, 0.15, 0.9))
 
 
 # Aguante del sprint: solo se ve cuando no está lleno
@@ -425,24 +416,20 @@ func _draw_stamina() -> void:
 	if p == null or p.stamina >= 1.0:
 		return
 	var w := stam_bar.size.x
-	var h := stam_bar.size.y
-	stam_bar.draw_colored_polygon(PackedVector2Array([Vector2(4, 0), Vector2(w + 4, 0), Vector2(w, h), Vector2(0, h)]), Color(0, 0, 0, 0.55))
-	var ww: float = (w - 2.0) * p.stamina
-	var col := Color(1.0, 0.32, 0.28) if p.tired else Color(0.98, 0.9, 0.5)
-	stam_bar.draw_colored_polygon(PackedVector2Array([Vector2(5, 1), Vector2(ww + 4, 1), Vector2(ww + 1, h - 1), Vector2(1, h - 1)]), col)
+	stam_bar.draw_rect(Rect2(0, 0, w, stam_bar.size.y), Color(1, 1, 1, 0.1))
+	stam_bar.draw_rect(Rect2(0, 0, w * p.stamina, stam_bar.size.y), Color(1.0, 0.35, 0.3, 0.9) if p.tired else Color(1.0, 0.88, 0.55, 0.8))
 
 
-# Una rayita por bala del cargador (si caben); si no, una barra
+# Línea de munición del cargador, o de recarga mientras recargas
 func _draw_pips() -> void:
 	var p = game.player
 	if p == null or p.cur > 1 or p.slots[p.cur] == null:
 		return
 	var s: Dictionary = p.slots[p.cur]
 	var d: Dictionary = W.DATA[s["id"]]
-	var maxm: int = int(d["mag"])
-	var cur: int = int(s["mag"])
 	var w := pips.size.x
 	var h := pips.size.y
+	pips.draw_rect(Rect2(0, 0, w, h), Color(1, 1, 1, 0.12))
 	if p.reload_t > 0.0:
 		var total: float = d["reload"]
 		if p.cafe_t > 0.0:
@@ -450,36 +437,25 @@ func _draw_pips() -> void:
 		if p.has_method("has_perk") and p.has_perk("rapida"):
 			total *= 0.5
 		var k := 1.0 - clampf(p.reload_t / total, 0.0, 1.0)
-		pips.draw_rect(Rect2(0, 3, w, 4), Color(0, 0, 0, 0.55))
-		pips.draw_rect(Rect2(0, 3, w * k, 4), GOLD)
+		pips.draw_rect(Rect2(0, 0, w * k, h), GOLD)
 		return
-	var low := cur <= maxm / 4
-	var on := Color(1.0, 0.35, 0.28) if low else Color(1, 1, 1, 0.9)
-	if maxm <= 40:
-		var paso := minf(10.0, w / float(maxm))
-		var x0 := w - paso * maxm
-		for i in maxm:
-			var x := x0 + i * paso
-			pips.draw_rect(Rect2(x, 0, maxf(2.0, paso - 3.0), h), on if i >= maxm - cur else Color(1, 1, 1, 0.14))
-	else:
-		pips.draw_rect(Rect2(0, 3, w, 4), Color(1, 1, 1, 0.14))
-		pips.draw_rect(Rect2(w * (1.0 - float(cur) / maxm), 3, w * float(cur) / maxm, 4), on)
+	var f := clampf(float(s["mag"]) / float(d["mag"]), 0.0, 1.0)
+	var low := f <= 0.25
+	pips.draw_rect(Rect2(w * (1.0 - f), 0, w * f, h), Color(1.0, 0.35, 0.28) if low else Color(1, 1, 1, 0.75))
 
 
-# Granadas Jan: bolitas doradas (llenas las que tienes)
+# Granadas Jan: puntitos (llenos los que tienes)
 func _draw_jan() -> void:
 	var p = game.player
 	if p == null:
 		return
 	var y := jan_box.size.y / 2.0
-	jan_box.draw_string(font_bold, Vector2(0, y + 6), "JAN", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(GOLD, 0.85))
 	for i in p.JAN_MAX:
-		var c := Vector2(38 + i * 15, y)
-		jan_box.draw_circle(c, 5.5, Color(0, 0, 0, 0.6))
+		var c := Vector2(3 + i * 8, y)
 		if i < p.jan_count:
-			jan_box.draw_circle(c, 4.5, GOLD)
+			jan_box.draw_circle(c, 2.2, Color(GOLD, 0.8))
 		else:
-			jan_box.draw_arc(c, 4.0, 0, TAU, 16, Color(GOLD, 0.45), 1.5)
+			jan_box.draw_arc(c, 2.0, 0, TAU, 10, Color(1, 1, 1, 0.25), 1.0)
 
 
 # ---------------- avisos que llama main ----------------
@@ -489,9 +465,9 @@ func hit(killed := false) -> void:
 
 
 func _popup(text: String, col: Color) -> void:
-	var l := _lbl(self, 30, col, font_num, 6)
+	var l := _sombra(_lbl(self, 16, col, font_num, 0))
 	l.text = text
-	l.position = points_lbl.global_position + Vector2(points_lbl.size.x + 12 + randf_range(0, 20), 12 + randf_range(-6, 6))
+	l.position = points_lbl.global_position + Vector2(points_lbl.size.x + 8 + randf_range(0, 12), 4 + randf_range(-3, 3))
 	var tw := l.create_tween().set_parallel()
 	tw.tween_property(l, "position", l.position + Vector2(randf_range(30, 60), -26), 0.9).set_ease(Tween.EASE_OUT)
 	tw.tween_property(l, "modulate:a", 0.0, 0.9).set_delay(0.3)
@@ -499,21 +475,9 @@ func _popup(text: String, col: Color) -> void:
 
 
 func _perk(text: String, col: Color, k: float) -> void:
-	var pc := PanelContainer.new()
-	var sb := panel_style(0.7)
-	sb.border_color = col
-	sb.set_border_width_all(0)
-	sb.border_width_left = 3
-	sb.content_margin_left = 8
-	sb.content_margin_right = 8
-	sb.content_margin_top = 1
-	sb.content_margin_bottom = 1
-	sb.set_corner_radius_all(3)
-	pc.add_theme_stylebox_override("panel", sb)
-	pc.modulate.a = 0.55 + 0.45 * k
-	perks_box.add_child(pc)
-	var l := _lbl(pc, 16, col.lightened(0.35), font_bold, 0)
-	l.text = text
+	var l := _sombra(_lbl(perks_box, 11, col.lightened(0.3), font_bold, 0))
+	l.text = "● " + text
+	l.modulate.a = 0.55 + 0.45 * k
 
 
 # ---------------- actualizar cada fotograma ----------------
@@ -550,7 +514,7 @@ func _process(delta: float) -> void:
 		var caja := "Caja: " + str(game.box_spots[game.box_spot][2])
 		if game.box_state >= 3:
 			caja = "Caja: cambiando de sala..."
-		info_lbl.text = "Bajas %d   ·   %s" % [game.kills, caja]
+		info_lbl.text = "%d bajas  ·  %s" % [game.kills, caja.to_lower()]
 	_mates()
 
 	# oleada: número grande que late al cambiar
@@ -596,6 +560,15 @@ func _process(delta: float) -> void:
 			_perk("GTA VI", Color(1.0, 0.4, 0.75), 1.0)
 
 	_weapon(p)
+	# apuntando: la mira normal se va; con francotirador sale la pantalla de la mira
+	var ads: float = p.ads_k if "ads_k" in p else 0.0
+	cross.modulate.a = 1.0 - clampf(ads * 1.6, 0.0, 1.0)
+	var tel := false
+	if ads > 0.85 and p.cur < 2 and p.slots[p.cur] != null and not p.third_person:
+		tel = W.DATA[p.slots[p.cur]["id"]].get("scope", false)
+	if tel != tele.visible:
+		tele.visible = tel
+		tele.queue_redraw()
 
 	# aviso de interacción (el de main o el de la misión)
 	var tx: String = prompt.text
@@ -606,7 +579,7 @@ func _process(delta: float) -> void:
 		pill_text.text = _keycaps(tx)
 		pill.reset_size()
 		var vp := get_viewport().get_visible_rect().size
-		pill.position = Vector2(round((vp.x - pill.size.x) / 2.0), vp.y - 230.0)
+		pill.position = Vector2(round((vp.x - pill.size.x) / 2.0), round(vp.y * 0.5 + 46.0))
 
 	# Jesús te ha hackeado: los números se vuelven locos
 	if game.hacking:
@@ -676,8 +649,12 @@ func _mates() -> void:
 # "[E]" -> tecla dibujada
 func _keycaps(tx: String) -> String:
 	tx = tx.replace("[", "[lb]")
-	tx = tx.replace("[lb]E]", "[bgcolor=#f2d26b][color=#111111][b] E [/b][/color][/bgcolor]")
+	tx = tx.replace("[lb]E]", "[color=#f2d26b][b]%s[/b][/color] " % ("A" if _hay_mando() else "E"))
 	return "[center]" + tx + "[/center]"
+
+
+static func _hay_mando() -> bool:
+	return not Input.get_connected_joypads().is_empty()
 
 
 static func thousands(n: int) -> String:

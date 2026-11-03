@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://uwdi2q03f073"
-path="res://.godot/imported/hugo.glb-b3c3096f994fd4918a199791fa0260c8.scn"
+uid="uid://ccj50nexp20ki"
+path="res://.godot/imported/perro.glb-7ee95c3c2bb52e74762ec21262abe806.scn"
 
 [deps]
 
-source_file="res://modelos/personajes/hugo.glb"
-dest_files=["res://.godot/imported/hugo.glb-b3c3096f994fd4918a199791fa0260c8.scn"]
+source_file="res://modelos/personajes/perro.glb"
+dest_files=["res://.godot/imported/perro.glb-7ee95c3c2bb52e74762ec21262abe806.scn"]
 
 [params]
 

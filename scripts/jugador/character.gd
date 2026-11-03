@@ -3,6 +3,7 @@ extends RefCounted
 # y guardado de la personalización del jugador.
 
 const U = preload("res://scripts/nucleo/util.gd")
+const W = preload("res://scripts/jugador/weapons.gd")
 const ZombiScene = preload("res://modelos/zombi_kimono.glb")
 
 const SKINS :=[["Clara", Color(0.96, 0.8, 0.68)], ["Media", Color(0.88, 0.68, 0.52)],
@@ -64,6 +65,18 @@ static func opt_name(key: String, i: int) -> String:
 
 static func col(list: Array, i: int) -> Color:
 	return list[clampi(i, 0, list.size() - 1)][1]
+
+
+# Colores de los brazos en primera persona: [manga, mano]
+static func colores_brazo(s: Dictionary) -> Array:
+	match int(s.get("preset", 0)):
+		1:
+			return [Color(0.72, 0.07, 0.08), Color(0.7, 0.06, 0.07)]        # traje de Juan (con guantes)
+		2:
+			return [Color(0.2, 0.29, 0.29), Color(0.93, 0.77, 0.66)]        # sudadera de Juan con el gato
+		3:
+			return [Color(0.05, 0.05, 0.06), Color(0.86, 0.68, 0.58)]       # Hugo: manga negra
+	return [col(SHIRTS, int(s.get("shirt", 0))), col(SKINS, int(s.get("skin", 0)))]
 
 
 static func load_skin() -> void:
@@ -1788,25 +1801,53 @@ class HugoAnim extends Node:
 			var fuera := -1.0 if lado == "Right" else 1.0
 			ik.append([u, l, h, pu.distance_to(pl), pl.distance_to(ph_), Vector3(0.45 * fuera, -1.0, -0.35), lado])
 
-	# Punto (en el mundo) que tiene que agarrar cada mano
+	# Punto (en el mundo) que tiene que agarrar cada mano: la derecha en la empuñadura
+	# y la izquierda en el guardamanos de ESA arma (grip / fore de weapons.gd)
 	func _objetivos() -> Array:
 		var pj = root.get_parent()
 		var ref: Node3D = null
+		var id := ""
 		if pj != null and "gun_holder" in pj and "cur" in pj:
 			var c: int = pj.cur
 			if c == 3:
 				return []                         # granada: brazos libres
 			ref = pj.katana_pivot if c == 2 else pj.gun_holder
+			id = pj.current_weapon_id()
 		var base: Transform3D
 		if ref != null and is_instance_valid(ref):
 			base = ref.global_transform
 		else:
 			var mano: Node3D = rig.get("hand")
 			base = mano.global_transform * Transform3D(Basis(), arma_local)
-		# mano derecha en la empuñadura, la izquierda debajo sujetándola
-		var der := base * Vector3(0.0, -0.03, 0.06)
-		var izq := base * Vector3(-0.045, -0.07, 0.03)
+		if not W.DATA.has(id):
+			return [base * Vector3(0.0, -0.03, 0.06), base * Vector3(-0.045, -0.07, 0.03)]
+		var d: Dictionary = W.DATA[id]
+		var g: Vector3 = d.get("grip", Vector3(0, -0.08, 0.03))
+		var f: Vector3 = d.get("fore", Vector3(-0.012, -0.105, 0.05))
+		var der := base * g
+		var izq := base * f
+		# si el guardamanos queda demasiado lejos para el brazo izquierdo, se coge más atrás
+		if not ik.is_empty() and ik.size() > 1:
+			var hombro := skel.global_transform * skel.get_bone_global_pose(ik[1][0]).origin
+			var alcance: float = (ik[1][3] + ik[1][4]) * skel.global_transform.basis.get_scale().y * 0.97
+			var k := 1.0
+			while k > 0.25 and hombro.distance_to(der.lerp(izq, k)) > alcance:
+				k -= 0.05
+			izq = der.lerp(izq, k)
 		return [der, izq]
+
+	# Dónde va el arma (espacio del personaje): las pistolas con los brazos estirados,
+	# las largas a la altura de la cadera, con la culata bajo el brazo
+	func _arma_para(id: String) -> Vector3:
+		if not W.DATA.has(id):
+			return arma_local
+		var d: Dictionary = W.DATA[id]
+		var g: Vector3 = d.get("grip", Vector3(0, -0.08, 0.03))
+		if d.get("hombro", false):
+			return Vector3(0.17, 1.36, 0.02) - g          # lanzacohetes al hombro
+		if d.get("larga", false):
+			return Vector3(0.15, 1.17, -0.16) - g
+		return Vector3(0.1, 1.2, -0.5) - (g - Vector3(0, -0.075, 0.03))
 
 	func _manos(delta: float) -> void:
 		if ik.is_empty():
@@ -1820,7 +1861,7 @@ class HugoAnim extends Node:
 			if not pj.is_local or pj.third_person:
 				arma = pj.gun_holder         # en primera persona el arma no se toca
 		if arma != null:
-			arma.position = arma_local
+			arma.position = _arma_para(pj.current_weapon_id())
 		var obj := _objetivos()
 		ik_k = move_toward(ik_k, 0.0 if obj.is_empty() else 1.0, 6.0 * delta)
 		if ik_k <= 0.001 or obj.is_empty():
@@ -1835,9 +1876,11 @@ class HugoAnim extends Node:
 		# corriendo, el arma va pegada a la mano de verdad (el brazo no llega a donde la pone el rig)
 		if arma != null and corre > 0.0 and not ik.is_empty() and ik[0][6] == "Right":
 			var mano := skel.global_transform * skel.get_bone_global_pose(ik[0][2]).origin
-			var agarre: Vector3 = arma.global_transform.basis * Vector3(0.0, -0.03, 0.06)
+			var gid: String = pj.current_weapon_id()
+			var gg: Vector3 = W.DATA[gid].get("grip", Vector3(0.0, -0.03, 0.06)) if W.DATA.has(gid) else Vector3(0.0, -0.03, 0.06)
+			var agarre: Vector3 = arma.global_transform.basis * gg
 			var dentro: Vector3 = (arma.get_parent() as Node3D).to_local(mano - agarre)
-			arma.position = arma_local.lerp(dentro, corre)
+			arma.position = _arma_para(pj.current_weapon_id()).lerp(dentro, corre)
 
 	func _dos_huesos(u: int, l: int, h: int, l1: float, l2: float, t: Vector3, polo: Vector3, w: float) -> void:
 		var pu := skel.get_bone_global_pose(u).origin

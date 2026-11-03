@@ -7,7 +7,8 @@ const Ch = preload("res://scripts/jugador/character.gd")
 
 static var autostart := false     # true = al recargar la escena empieza a jugar directamente
 
-const CONTROLS := "WASD  ·  mover\nShift  ·  correr (disparar corta la carrera)\nE (mantener)  ·  reanimar a un compañero caído (cooperativo)\nRatón  ·  mirar\nClic izquierdo  ·  disparar / atacar\nR  ·  recargar\n1 / 2 / 3  ·  cambiar de arma (3 = katana)\n4 / G  ·  granada Jan (mantén clic y suelta para lanzar)\nE  ·  comprar armas, abrir puertas y usar la caja\nF  ·  linterna\nV  ·  cámara primera / tercera persona\nF8  ·  cámara libre (partidas de un jugador)\nEsc  ·  pausa"
+const CONTROLS := "WASD  ·  mover\nShift  ·  correr (disparar corta la carrera)\nE (mantener)  ·  reanimar a un compañero caído (cooperativo)\nRatón  ·  mirar\nClic izquierdo  ·  disparar / atacar\nClic derecho  ·  apuntar\nR  ·  recargar\n1 / 2 / 3  ·  cambiar de arma (3 = katana)\n4 / G  ·  granada Jan (mantén clic y suelta para lanzar)\nE  ·  comprar armas, abrir puertas y usar la caja\nF  ·  linterna\nV  ·  cámara primera / tercera persona\nF8  ·  cámara libre (partidas de un jugador)\nEsc  ·  pausa"
+const CONTROLS_MANDO := "Stick izquierdo  ·  mover\nL3 (pulsar el stick)  ·  correr\nStick derecho  ·  mirar\nRT  ·  disparar / atacar\nLT  ·  apuntar\nX  ·  recargar\nY  ·  cambiar de arma\nB  ·  katana\nLB  ·  granada Jan (mantén RT y suelta)\nA  ·  usar, comprar, abrir y reanimar\nR3  ·  linterna\nSelect  ·  cámara 1ª / 3ª persona\nCruceta  ·  flechas de las pruebas\nStart  ·  pausa  ·  en menús: A aceptar, B volver"
 const RED := Color(0.9, 0.08, 0.1)
 const HudScript = preload("res://scripts/interfaz/hud.gd")
 
@@ -535,28 +536,24 @@ func _build_background() -> void:
 # Construcción de la interfaz
 # =============================================================
 func _style_button(b: Button, size: Vector2, font_size: int) -> void:
-	# placas inclinadas con una franja roja a la izquierda (como el HUD)
+	# minimalista: solo texto; al pasar el ratón, una raya roja a la izquierda y un fondo muy suave
 	var ancho := size.x >= 200.0
 	var n := StyleBoxFlat.new()
-	n.bg_color = Color(0.05, 0.02, 0.025, 0.82)
-	n.border_color = Color(0.75, 0.06, 0.09)
+	n.bg_color = Color(1, 1, 1, 0.0)
 	n.set_border_width_all(0)
-	n.border_width_left = 6 if ancho else 0
-	n.border_width_bottom = 0 if ancho else 2
+	n.border_color = Color(0.9, 0.1, 0.12)
 	n.set_corner_radius_all(2)
-	n.skew = Vector2(0.22, 0.0) if ancho else Vector2.ZERO
-	n.content_margin_left = 30 if ancho else 4
+	n.content_margin_left = 18 if ancho else 4
 	n.content_margin_right = 12 if ancho else 4
-	n.shadow_color = Color(0, 0, 0, 0.55)
-	n.shadow_size = 8
-	n.shadow_offset = Vector2(3, 4)
+	if not ancho:
+		n.bg_color = Color(1, 1, 1, 0.06)
 	var h: StyleBoxFlat = n.duplicate()
-	h.bg_color = Color(0.62, 0.04, 0.07, 0.94)
-	h.border_color = Color(1.0, 0.82, 0.36)
-	h.border_width_left = 10 if ancho else 0
-	h.content_margin_left = 40 if ancho else 4
+	h.bg_color = Color(1, 1, 1, 0.07)
+	h.border_width_left = 3 if ancho else 0
+	h.border_width_bottom = 0 if ancho else 2
+	h.content_margin_left = 26 if ancho else 4
 	var p: StyleBoxFlat = h.duplicate()
-	p.bg_color = Color(0.9, 0.12, 0.14)
+	p.bg_color = Color(0.9, 0.1, 0.12, 0.35)
 	if ancho:
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	font_size = int(font_size * 1.18)
@@ -566,11 +563,11 @@ func _style_button(b: Button, size: Vector2, font_size: int) -> void:
 	b.add_theme_stylebox_override("focus", h)
 	b.add_theme_font_override("font", font_bold)
 	b.add_theme_font_size_override("font_size", font_size)
-	b.add_theme_color_override("font_color", Color(0.95, 0.92, 0.9))
 	b.add_theme_color_override("font_hover_color", Color(1.0, 0.86, 0.45))
 	b.add_theme_color_override("font_focus_color", Color(1.0, 0.86, 0.45))
-	b.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
-	b.add_theme_constant_override("outline_size", 4)
+	b.add_theme_color_override("font_color", Color(1, 1, 1, 0.82))
+	b.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	b.add_theme_constant_override("shadow_outline_size", 6)
 	b.custom_minimum_size = size
 	b.pivot_offset = size * 0.5
 	b.mouse_entered.connect(func():
@@ -608,11 +605,9 @@ func _label(parent: Node, text: String, size: int, col: Color, bold: bool = fals
 
 func _panel_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.035, 0.02, 0.03, 0.92)
-	s.border_color = Color(0.75, 0.06, 0.09)
-	s.set_border_width_all(1)
-	s.border_width_top = 4
-	s.set_corner_radius_all(4)
+	s.bg_color = Color(0.02, 0.015, 0.02, 0.86)
+	s.set_border_width_all(0)
+	s.set_corner_radius_all(6)
 	s.set_content_margin_all(22)
 	s.shadow_color = Color(0, 0, 0, 0.7)
 	s.shadow_size = 14
@@ -844,7 +839,17 @@ func _build_controls() -> void:
 	vb.add_theme_constant_override("separation", 16)
 	panel.add_child(vb)
 	_label(vb, "CONTROLES", 52, RED, true)
-	_label(vb, CONTROLS, 24, Color(0.92, 0.9, 0.9))
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 48)
+	vb.add_child(cols)
+	var izq := VBoxContainer.new()
+	cols.add_child(izq)
+	_label(izq, "TECLADO Y RATÓN", 22, Color(1, 1, 1, 0.5))
+	_label(izq, CONTROLS, 20, Color(0.92, 0.9, 0.9)).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	var der := VBoxContainer.new()
+	cols.add_child(der)
+	_label(der, "MANDO", 22, Color(1, 1, 1, 0.5))
+	_label(der, CONTROLS_MANDO, 20, Color(0.92, 0.9, 0.9)).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_button(vb, "VOLVER", _hide_controls)
 	controls_root.visible = false
 

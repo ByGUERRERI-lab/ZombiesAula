@@ -696,6 +696,139 @@ static func _gun_model_code(id: String) -> Node3D:
 			box_m(g, Vector3(0.035, 0.07, 0.06), Vector3(0, -0.1, -0.02), gm2)              # cargador
 			for sx in [-1.0, 1.0]:                                                          # bípode plegado
 				tube(g, 0.006, 0.22, Vector3(sx * 0.02, -0.085, -0.38), gm2)
+		"revolver":
+			var acero := gunmetal(Color(0.45, 0.46, 0.5))                                    # acero pulido
+			tube(g, 0.016, 0.2, Vector3(0, 0.03, -0.17), acero)                              # cañón
+			box_m(g, Vector3(0.022, 0.012, 0.2), Vector3(0, 0.048, -0.17), acero)            # costilla
+			box_m(g, Vector3(0.006, 0.014, 0.012), Vector3(0, 0.06, -0.26), gm)              # mira delantera
+			tube(g, 0.012, 0.16, Vector3(0, 0.002, -0.15), acero)                            # varilla del extractor
+			var tambor := tube(g, 0.032, 0.06, Vector3(0, 0.012, -0.03), acero)              # tambor
+			tambor.rotation_degrees.z = 0.0
+			for i in 6:                                                                      # recámaras
+				var a := TAU * i / 6.0
+				tube(g, 0.008, 0.062, Vector3(cos(a) * 0.02, 0.012 + sin(a) * 0.02, -0.03), blk)
+			box_m(g, Vector3(0.04, 0.06, 0.07), Vector3(0, 0.012, 0.025), acero)             # armazón
+			box_m(g, Vector3(0.012, 0.02, 0.02), Vector3(0, 0.05, 0.05), gm)                 # martillo
+			var grip := box_m(g, Vector3(0.04, 0.11, 0.05), Vector3(0, -0.06, 0.06), wd)
+			grip.rotation_degrees.x = -22.0
+			box_m(g, Vector3(0.006, 0.006, 0.05), Vector3(0, -0.03, 0.0), acero)            # guardamonte
+			box_m(g, Vector3(0.005, 0.022, 0.005), Vector3(0, -0.025, 0.01), gm)             # gatillo
+		"deagle":
+			var cromo := gunmetal(Color(0.62, 0.6, 0.55))
+			box_m(g, Vector3(0.052, 0.075, 0.28), Vector3(0, 0.03, -0.11), cromo)            # corredera grande
+			box_m(g, Vector3(0.054, 0.012, 0.22), Vector3(0, 0.07, -0.12), gm)               # carril superior
+			for i in 6:
+				box_m(g, Vector3(0.055, 0.055, 0.006), Vector3(0, 0.03, 0.0 - i * 0.012), gm)
+			tube(g, 0.016, 0.02, Vector3(0, 0.03, -0.255), blk)                              # boca
+			box_m(g, Vector3(0.048, 0.035, 0.2), Vector3(0, -0.02, -0.09), cromo)            # armazón
+			var grip := box_m(g, Vector3(0.048, 0.14, 0.064), Vector3(0, -0.1, 0.025), poly)
+			grip.rotation_degrees.x = -12.0
+			box_m(g, Vector3(0.05, 0.014, 0.07), Vector3(0, -0.17, 0.04), cromo)
+			box_m(g, Vector3(0.008, 0.035, 0.008), Vector3(0, -0.055, -0.08), cromo)         # guardamonte
+			box_m(g, Vector3(0.006, 0.026, 0.006), Vector3(0, -0.05, -0.05), gm)
+		"uzi":
+			box_m(g, Vector3(0.05, 0.075, 0.26), Vector3(0, 0.0, -0.06), gm)                 # cajón
+			box_m(g, Vector3(0.052, 0.02, 0.2), Vector3(0, 0.045, -0.06), gm2)               # tapa
+			box_m(g, Vector3(0.012, 0.016, 0.03), Vector3(0, 0.06, -0.15), gm)               # mira delantera
+			box_m(g, Vector3(0.03, 0.014, 0.02), Vector3(0, 0.06, 0.05), gm)                 # alza
+			tube(g, 0.012, 0.07, Vector3(0, 0.0, -0.22), gm2)                                # cañón corto
+			var grip := box_m(g, Vector3(0.04, 0.14, 0.05), Vector3(0, -0.1, -0.02), poly)   # empuñadura con el cargador dentro
+			grip.rotation_degrees.x = -6.0
+			box_m(g, Vector3(0.028, 0.06, 0.035), Vector3(0, -0.2, -0.025), gm2)             # base del cargador
+			box_m(g, Vector3(0.042, 0.035, 0.08), Vector3(0, -0.03, -0.14), poly)            # guardamanos
+			box_m(g, Vector3(0.008, 0.03, 0.05), Vector3(0, -0.05, 0.03), gm)                # guardamonte
+			for sx in [-1.0, 1.0]:                                                           # culata plegada
+				box_m(g, Vector3(0.006, 0.01, 0.16), Vector3(sx * 0.03, -0.01, 0.0), gm2)
+		"escopeta":
+			tube(g, 0.019, 0.72, Vector3(0, 0.012, -0.46), gm)                               # cañón
+			tube(g, 0.016, 0.56, Vector3(0, -0.025, -0.4), gm2)                              # depósito tubular
+			var bomba := tube(g, 0.032, 0.2, Vector3(0, -0.02, -0.36), wd)                   # corredera (la bomba)
+			for i in 6:
+				tube(g, 0.034, 0.008, Vector3(0, -0.02, -0.28 - i * 0.03), mat(Color(0.2, 0.12, 0.06)))
+			bomba.scale = Vector3(1.0, 1.0, 1.0)
+			box_m(g, Vector3(0.05, 0.075, 0.24), Vector3(0, 0.0, -0.02), gm)                 # cajón
+			box_m(g, Vector3(0.008, 0.012, 0.012), Vector3(0, 0.035, -0.81), mat(Color(0.9, 0.85, 0.7)))   # punto de mira
+			box_m(g, Vector3(0.012, 0.03, 0.07), Vector3(0, -0.05, 0.03), gm)                # guardamonte
+			var cuello := box_m(g, Vector3(0.042, 0.08, 0.1), Vector3(0, -0.04, 0.13), wd)
+			cuello.rotation_degrees.x = -14.0
+			var st := box_m(g, Vector3(0.048, 0.11, 0.3), Vector3(0, -0.06, 0.3), wd)        # culata
+			st.rotation_degrees.x = 7.0
+			box_m(g, Vector3(0.052, 0.13, 0.02), Vector3(0, -0.08, 0.46), blk)               # cantonera
+		"escopeta_auto":
+			box_m(g, Vector3(0.07, 0.1, 0.5), Vector3(0, 0.0, -0.1), poly)                   # cuerpo
+			box_m(g, Vector3(0.03, 0.02, 0.4), Vector3(0, 0.065, -0.1), gm)                  # raíl
+			box_m(g, Vector3(0.02, 0.03, 0.03), Vector3(0, 0.075, -0.3), gm)                 # mira
+			tube(g, 0.02, 0.24, Vector3(0, 0.02, -0.46), gm)                                 # cañón
+			tube(g, 0.03, 0.06, Vector3(0, 0.02, -0.58), blk)                                # bocacha
+			var tambor := cone_m(g, 0.085, 0.085, 0.06, Vector3(0, -0.11, -0.08), gm2)       # cargador de tambor
+			tambor.rotation_degrees.z = 90.0
+			var grip := box_m(g, Vector3(0.045, 0.13, 0.055), Vector3(0, -0.1, 0.1), poly)
+			grip.rotation_degrees.x = -16.0
+			box_m(g, Vector3(0.055, 0.11, 0.24), Vector3(0, -0.02, 0.27), poly)              # culata
+			box_m(g, Vector3(0.06, 0.13, 0.02), Vector3(0, -0.03, 0.4), blk)
+			box_m(g, Vector3(0.04, 0.06, 0.1), Vector3(0, -0.07, -0.3), poly)                # empuñadura delantera
+		"ametralladora":
+			box_m(g, Vector3(0.075, 0.11, 0.42), Vector3(0, 0.0, -0.05), gm)                 # cajón
+			box_m(g, Vector3(0.08, 0.025, 0.3), Vector3(0, 0.068, -0.03), gm2)               # tapa del alimentador
+			box_m(g, Vector3(0.045, 0.06, 0.3), Vector3(0, 0.0, -0.36), gm2)                 # guardamanos
+			for i in 6:
+				box_m(g, Vector3(0.05, 0.065, 0.012), Vector3(0, 0.0, -0.25 - i * 0.04), blk)
+			tube(g, 0.018, 0.5, Vector3(0, 0.0, -0.72), gm)                                  # cañón
+			tube(g, 0.026, 0.07, Vector3(0, 0.0, -0.98), blk)                                # apagallamas
+			box_m(g, Vector3(0.016, 0.05, 0.02), Vector3(0, 0.04, -0.9), gm)                 # mira delantera
+			box_m(g, Vector3(0.03, 0.03, 0.03), Vector3(0, 0.095, 0.1), gm)                  # alza
+			box_m(g, Vector3(0.11, 0.13, 0.12), Vector3(0.0, -0.11, -0.08), mat(Color(0.25, 0.3, 0.18)))   # caja de munición
+			for i in 5:                                                                      # cinta de balas
+				tube(g, 0.007, 0.03, Vector3(0.05, 0.03 - i * 0.012, -0.08), mat(Color(0.75, 0.6, 0.25)))
+			tube(g, 0.008, 0.03, Vector3(0, 0.12, -0.12), gm2)                               # asa de transporte
+			box_m(g, Vector3(0.012, 0.012, 0.14), Vector3(0, 0.135, -0.12), gm2)
+			var grip := box_m(g, Vector3(0.045, 0.12, 0.055), Vector3(0, -0.1, 0.14), poly)
+			grip.rotation_degrees.x = -18.0
+			box_m(g, Vector3(0.055, 0.1, 0.3), Vector3(0, -0.03, 0.33), poly)                # culata
+			for sx in [-1.0, 1.0]:                                                           # bípode
+				var pata := tube(g, 0.006, 0.26, Vector3(sx * 0.03, -0.08, -0.78), gm2)
+				pata.rotation_degrees = Vector3(30.0, 0.0, sx * 10.0)
+		"minigun":
+			var giro := Node3D.new()                                                         # el haz de cañones
+			giro.name = "Canones"
+			giro.position = Vector3(0, 0, -0.3)
+			g.add_child(giro)
+			for i in 6:
+				var a := TAU * i / 6.0
+				tube(giro, 0.012, 0.75, Vector3(cos(a) * 0.035, sin(a) * 0.035, -0.25), gm)
+			for zz in [-0.05, -0.35, -0.6]:
+				tube(giro, 0.055, 0.02, Vector3(0, 0, zz), gm2)
+			tube(g, 0.06, 0.25, Vector3(0, 0, 0.05), gm2)                                    # motor
+			box_m(g, Vector3(0.12, 0.16, 0.26), Vector3(0, -0.02, 0.18), gm)                 # carcasa
+			box_m(g, Vector3(0.14, 0.14, 0.18), Vector3(0.11, -0.04, 0.2), mat(Color(0.3, 0.32, 0.2)))   # caja de munición
+			for sx in [-1.0, 1.0]:                                                           # asas
+				limb_m(g, Vector3(sx * 0.03, 0.06, 0.18), Vector3(sx * 0.03, 0.11, -0.12), 0.012, 0.012, poly)
+			box_m(g, Vector3(0.012, 0.03, 0.04), Vector3(0, 0.14, 0.0), gm)                  # mira
+		"ballesta":
+			box_m(g, Vector3(0.05, 0.06, 0.62), Vector3(0, 0.0, -0.08), wd)                  # cuerpo
+			box_m(g, Vector3(0.02, 0.012, 0.5), Vector3(0, 0.035, -0.12), gm)                # carril del virote
+			for sx in [-1.0, 1.0]:                                                           # arco
+				var brazo := box_m(g, Vector3(0.3, 0.025, 0.035), Vector3(sx * 0.15, 0.02, -0.36), gm)
+				brazo.rotation_degrees.y = sx * -18.0
+				limb_m(g, Vector3(sx * 0.29, 0.02, -0.28), Vector3(0.0, 0.035, 0.04), 0.002, 0.002, mat(Color(0.85, 0.85, 0.8)))
+			tube(g, 0.006, 0.42, Vector3(0, 0.05, -0.2), mat(Color(0.5, 0.4, 0.3)))          # virote
+			var punta := cone_m(g, 0.0, 0.015, 0.05, Vector3(0, 0.05, -0.43), mat(Color(1.0, 0.45, 0.1), true))
+			punta.rotation_degrees.x = -90.0
+			box_m(g, Vector3(0.012, 0.03, 0.02), Vector3(0, 0.06, 0.05), gm)                 # mira
+			var grip := box_m(g, Vector3(0.042, 0.12, 0.055), Vector3(0, -0.08, 0.15), wd)
+			grip.rotation_degrees.x = -18.0
+			box_m(g, Vector3(0.05, 0.1, 0.24), Vector3(0, -0.04, 0.32), wd)                  # culata
+		"lanzacohetes":
+			var verde := mat(Color(0.22, 0.28, 0.16))
+			tube(g, 0.055, 1.0, Vector3(0, 0.0, -0.15), verde)                               # tubo
+			tube(g, 0.064, 0.08, Vector3(0, 0.0, -0.62), gm)                                 # boca
+			tube(g, 0.064, 0.1, Vector3(0, 0.0, 0.33), gm)                                   # tobera trasera
+			var cabeza := cone_m(g, 0.02, 0.05, 0.16, Vector3(0, 0.0, -0.72), mat(Color(0.35, 0.38, 0.3)))   # cohete asomando
+			cabeza.rotation_degrees.x = -90.0
+			box_m(g, Vector3(0.03, 0.07, 0.08), Vector3(0.0, 0.08, -0.1), gm)                # mira
+			box_m(g, Vector3(0.04, 0.12, 0.05), Vector3(0, -0.1, 0.05), poly)                # empuñadura
+			box_m(g, Vector3(0.04, 0.1, 0.05), Vector3(0, -0.1, -0.3), poly)                 # empuñadura delantera
+			box_m(g, Vector3(0.012, 0.03, 0.07), Vector3(0, -0.06, 0.0), gm)
 		_:
 			# Pistola de rayos retro: cromo, aletas y anillos verdes brillantes
 			var chrome := StandardMaterial3D.new()

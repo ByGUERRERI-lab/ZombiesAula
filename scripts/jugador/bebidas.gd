@@ -111,6 +111,8 @@ func comprar(it: Dictionary) -> void:
 		return
 	game.points -= int(d["precio"])
 	player.give_perk(id)
+	if player.vista != null:
+		player.vista.beber(d["color"], d["letra"])        # animación de bebérsela
 	snd_beber.play()
 	for m in maquinas:
 		if m["id"] == id:
@@ -192,12 +194,12 @@ func _build_hud() -> void:
 	add_child(layer)
 	# fila de chapas entre la oleada y la barra de vida del HUD
 	iconos = HBoxContainer.new()
-	iconos.add_theme_constant_override("separation", 7)
+	iconos.add_theme_constant_override("separation", 4)
 	iconos.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	iconos.offset_left = 174.0
-	iconos.offset_right = 174.0
-	iconos.offset_top = -120.0
-	iconos.offset_bottom = -84.0
+	iconos.offset_left = 20.0
+	iconos.offset_right = 20.0
+	iconos.offset_top = -50.0
+	iconos.offset_bottom = -36.0
 	iconos.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(iconos)
 	flash = ColorRect.new()
@@ -207,27 +209,22 @@ func _build_hud() -> void:
 	layer.add_child(flash)
 
 
-# Chapa redonda del color de la bebida con su letra (como los iconos de CoD)
+# Circulito plano del color de la bebida con su letra
 func _icono(id: String) -> Control:
 	var d: Dictionary = DATOS[id]
 	var col: Color = d["color"]
 	var c := Control.new()
-	c.custom_minimum_size = Vector2(34, 34)
+	c.custom_minimum_size = Vector2(14, 14)
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var f := HudScript.fuente(HudScript.F_NUM)
+	var f := HudScript.fuente(HudScript.F_UI_BOLD)
 	c.draw.connect(func():
-		var m := Vector2(17, 17)
-		c.draw_circle(m + Vector2(1.5, 2), 16.5, Color(0, 0, 0, 0.5))
-		c.draw_circle(m, 16.5, col.lightened(0.45))
-		c.draw_circle(m, 14.5, col.darkened(0.25))
-		c.draw_circle(m + Vector2(0, -3), 11.0, col)
-		c.draw_arc(m, 12.5, PI * 1.1, PI * 1.6, 10, Color(1, 1, 1, 0.45), 2.0)
-		c.draw_string_outline(f, Vector2(0, 26), d["letra"], HORIZONTAL_ALIGNMENT_CENTER, 34, 24, 4, Color(0, 0, 0, 0.7))
-		c.draw_string(f, Vector2(0, 26), d["letra"], HORIZONTAL_ALIGNMENT_CENTER, 34, 24, Color(1, 1, 1)))
-	# aparece con un saltito
-	c.pivot_offset = Vector2(17, 17)
-	c.scale = Vector2.ONE * 1.6
-	c.create_tween().tween_property(c, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		var m := Vector2(7, 7)
+		c.draw_circle(m, 7.0, Color(0, 0, 0, 0.25))
+		c.draw_circle(m, 6.3, Color(col, 0.85))
+		c.draw_string(f, Vector2(0, 10.5), d["letra"], HORIZONTAL_ALIGNMENT_CENTER, 14, 10, Color(1, 1, 1, 0.95)))
+	c.pivot_offset = Vector2(7, 7)
+	c.scale = Vector2.ONE * 1.5
+	c.create_tween().tween_property(c, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return c
 
 

@@ -23,6 +23,7 @@ const AYUDA := """[color=#9be05a]COMANDOS[/color]
   [b]monstruos[/b]                      galería: todos los monstruos en fila delante de ti, quietos y con su nombre
   [b]monstruos andar[/b] | [b]quitar[/b]       que den vueltas andando (otra vez para pararlos) · quitarlos
   [b]matar[/b]                          mata a todos los enemigos
+  [b]perro[/b]                          quitar / poner al perro acompañante
   [b]arma[/b] fusil                     te da un arma: pistola, subfusil, fusil, francotirador, pistola_rayo
   [b]municion[/b]                       munición llena
   [b]bebida[/b] tanque | todas          bebida de las máquinas: tanque, rapida, doble, revivir, turbo
@@ -246,6 +247,16 @@ func _ejecutar(texto: String) -> void:
 			_ok("%s con %d de vida" % [arg, int(vida)])
 		"monstruos", "monstruo", "bichos", "galeria", "galería":
 			_galeria(arg)
+		"perro", "dog":
+			if game.perro == null:
+				_error("Aquí no hay perro (en todos contra todos no viene)")
+				return
+			game.perro.visible = not game.perro.visible
+			game.perro.process_mode = Node.PROCESS_MODE_INHERIT if game.perro.visible else Node.PROCESS_MODE_DISABLED
+			game.perro.item["done"] = true
+			if game.perro.visible:
+				game.perro.global_position = game.player.global_position + game.player.global_transform.basis.z * 1.2
+			_ok("Mac " + ("está contigo" if game.perro.visible else "se ha ido a dormir"))
 		"matar", "kill":
 			var n2 := _matar()
 			_ok("%d enemigos eliminados" % n2)
@@ -271,6 +282,9 @@ func _ejecutar(texto: String) -> void:
 					_error("Bebidas: " + ", ".join(BebidasScript.DATOS.keys()) + ", todas")
 					return
 				pl.give_perk(id)
+			if pl.vista != null and ids.size() == 1:
+				var bd: Dictionary = BebidasScript.DATOS[ids[0]]
+				pl.vista.beber(bd["color"], bd["letra"])
 			_ok("Bebidas: " + ", ".join(pl.perks))
 		"curar", "heal":
 			pl.hp = pl.max_hp

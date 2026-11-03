@@ -10,6 +10,7 @@ const RayScript = preload("res://scripts/jugador/rayo.gd")
 const JanScript = preload("res://scripts/jugador/jan_bang.gd")
 const SustoScript = preload("res://scripts/enemigos/susto_victor.gd")
 const KatanaScene = preload("res://modelos/katana.glb")
+const VistaScript = preload("res://scripts/jugador/vista_arma.gd")
 
 const SPEED := 6.0
 const SPRINT := 1.6            # con Shift corres un 60 % más (9,6)
@@ -72,6 +73,9 @@ var cam: Camera3D
 var head_pivot: Node3D
 var pitch := 0.0
 var third_person := false
+var aiming := false            # clic derecho (o LT): apuntar con el arma
+var ads_k := 0.0               # 0 = sin apuntar, 1 = apuntando del todo
+var vista                      # arma y brazos en primera persona (vista_arma.gd)
 var frozen := false
 var input_blocked := false           # menú de pausa abierto en una partida online
 var flashlight: SpotLight3D
@@ -131,6 +135,9 @@ func _ready() -> void:
 	if is_local:
 		cam.current = true
 		cam.set_cull_mask_value(2, false)
+		vista = VistaScript.new()
+		vista.player = self
+		cam.add_child(vista)
 
 	# Linterna (tecla F): en CESUR empiezas con ella encendida, es de noche
 	flashlight = SpotLight3D.new()
@@ -182,8 +189,9 @@ func _input(event: InputEvent) -> void:
 	if not is_local:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not dead and not frozen and not input_blocked:
-		rotation.y -= event.relative.x * SENS
-		pitch = clampf(pitch - event.relative.y * SENS, deg_to_rad(-80.0), deg_to_rad(80.0))
+		var sens := SENS * lerpf(1.0, _sens_apuntando(), ads_k)
+		rotation.y -= event.relative.x * sens
+		pitch = clampf(pitch - event.relative.y * sens, deg_to_rad(-80.0), deg_to_rad(80.0))
 		head_pivot.rotation.x = pitch
 	elif event is InputEventKey and event.pressed and not event.echo and not input_blocked:
 		if event.keycode == KEY_F:
@@ -271,6 +279,8 @@ func _gun_node(id: String) -> Node3D:
 		U.toonify(g, 0.006)
 		g.visible = false
 		gun_holder.add_child(g)
+		if is_local:
+			U.set_layer(g, 2)       # en primera persona se ve el de vista_arma.gd
 		gun_models[id] = g
 	return gun_models[id]
 
@@ -422,6 +432,7 @@ func _physics_process(delta: float) -> void:
 	_update_sprint(delta)
 	var turbo := has_perk("turbo")
 	var spd := SPEED * (1.3 if has_gta else 1.0) * (1.08 if turbo else 1.0) * ((SPRINT + (0.25 if turbo else 0.0)) if sprinting else 1.0)
+	spd *= lerpf(1.0, 0.55, ads_k)          # apuntando vas más despacio
 	velocity.x = d.x * spd + knock.x
 	velocity.z = d.z * spd + knock.z
 	knock = knock.lerp(Vector3.ZERO, 8.0 * delta)
@@ -436,7 +447,11 @@ func _physics_process(delta: float) -> void:
 	aim_dir.y = 0.0
 	aim_dir = aim_dir.normalized()
 	if input_blocked:
+		aiming = false
+		ads_k = 0.0
 		return
+
+	_apuntar(delta)
 
 	# Cambio de arma y recarga
 	if Input.is_key_pressed(KEY_1): _select(0)
@@ -468,7 +483,7 @@ func _physics_process(delta: float) -> void:
 # Shift + W para correr. Disparar o lanzar a Jan corta el sprint.
 func _update_sprint(delta: float) -> void:
 	var attacking := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or jan_charge >= 0.0
-	sprinting = Input.is_key_pressed(KEY_SHIFT) and Input.is_key_pressed(KEY_W) and not Input.is_key_pressed(KEY_S) \
+	sprinting = Input.is_key_pressed(KEY_SHIFT) and Input.is_key_pressed(KEY_W) and not Input.is_key_pressed(KEY_S) and not aiming \
 			and not input_blocked and not attacking and not tired
 	if sprinting:
 		stamina -= delta / (SPRINT_TIME * (2.0 if has_perk("turbo") else 1.0))
@@ -480,6 +495,27 @@ func _update_sprint(delta: float) -> void:
 		stamina = minf(1.0, stamina + delta / SPRINT_BACK)
 		if tired and stamina >= 0.3:
 			tired = false
+
+
+# Clic derecho (LT en el mando): apuntar. Solo con armas de fuego, sin recargar ni correr.
+func _apuntar(delta: float) -> void:
+	var rmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	aiming = rmb and cur < 2 and slots[cur] != null and reload_t <= 0.0 and not frozen
+	if aiming and sprinting:
+		sprinting = false
+	ads_k = move_toward(ads_k, 1.0 if aiming else 0.0, delta * 7.0)
+	if is_local and run_k <= 0.0:
+		var fov := 75.0
+		if cur < 2 and slots[cur] != null:
+			fov = float(W.DATA[slots[cur]["id"]].get("ads", 60.0))
+		cam.fov = lerpf(75.0, fov, ads_k * ads_k * (3.0 - 2.0 * ads_k))
+
+
+func _sens_apuntando() -> float:
+	if cur < 2 and slots[cur] != null:
+		var fov := float(W.DATA[slots[cur]["id"]].get("ads", 60.0))
+		return fov / 75.0
+	return 1.0
 
 
 func _run_anim(delta: float) -> void:
@@ -544,6 +580,8 @@ func _shoot() -> void:
 		_fire_bullets(id, d)
 	snd_shot.stream = _snd(id)
 	snd_shot.play()
+	if vista != null:
+		vista.disparo()
 	var gm: Node3D = _gun_node(id)
 	gm.position.z = 0.1
 	create_tween().tween_property(gm, "position:z", 0.0, 0.12)
@@ -555,16 +593,19 @@ func _shoot() -> void:
 func _fire_ray(d: Dictionary) -> void:
 	var basis_h: Basis = head_pivot.global_transform.basis
 	var dir := -basis_h.z
-	var origin: Vector3 = head_pivot.global_position + dir * 0.6 + basis_h.x * 0.15 - basis_h.y * 0.12
-	var vel: Vector3 = dir.rotated(Vector3.UP, deg_to_rad(randf_range(-0.5, 0.5))) * float(d["speed"])
-	_spawn_ray(origin, vel, false)
-	_fx_shot(origin, PackedVector3Array(), d["tracer"], "pistola_rayo")
+	var origin: Vector3 = head_pivot.global_position + dir * 0.6 + (basis_h.x * 0.15 - basis_h.y * 0.12) * (1.0 - ads_k)
+	var sp := float(d["spread"]) * (1.0 - 0.8 * ads_k)
+	var vel: Vector3 = dir.rotated(Vector3.UP, deg_to_rad(randf_range(-sp, sp))) * float(d["speed"])
+	var id: String = slots[cur]["id"]
+	_spawn_ray(origin, vel, false, id)
+	_fx_shot(origin, PackedVector3Array(), d["tracer"], id)
 	if Net.running and Net.online:
-		_net_ray.rpc(origin, vel)
+		_net_ray.rpc(origin, vel, id)
 
 
-func _spawn_ray(origin: Vector3, vel: Vector3, visual: bool) -> void:
+func _spawn_ray(origin: Vector3, vel: Vector3, visual: bool, id: String = "pistola_rayo") -> void:
 	var r = RayScript.new()
+	r.arma = id
 	r.shooter = self
 	r.visual_only = visual
 	r.vel = vel
@@ -573,9 +614,9 @@ func _spawn_ray(origin: Vector3, vel: Vector3, visual: bool) -> void:
 
 
 @rpc("authority", "unreliable")
-func _net_ray(origin: Vector3, vel: Vector3) -> void:
-	_spawn_ray(origin, vel, true)
-	_fx_shot(origin, PackedVector3Array(), Color(0.2, 1.0, 0.4), "pistola_rayo")
+func _net_ray(origin: Vector3, vel: Vector3, id: String = "pistola_rayo") -> void:
+	_spawn_ray(origin, vel, true, id)
+	_fx_shot(origin, PackedVector3Array(), W.DATA[id]["tracer"] if W.DATA.has(id) else Color(0.2, 1.0, 0.4), id)
 
 
 func _fire_bullets(id: String, d: Dictionary) -> void:
@@ -586,7 +627,7 @@ func _fire_bullets(id: String, d: Dictionary) -> void:
 	aim_slope = d3.y / maxf(Vector2(d3.x, d3.z).length(), 0.05)
 	var ends := PackedVector3Array()
 	for i in int(d["pellets"]):
-		var sp := float(d["spread"])
+		var sp := lerpf(float(d.get("hip_spread", d["spread"])), float(d["spread"]) * (0.3 if int(d["pellets"]) == 1 else 0.7), ads_k)
 		var ang := deg_to_rad(randf_range(-sp, sp))
 		ends.append(_pellet(origin, aim_dir.rotated(Vector3.UP, ang), float(d["dmg"]) * (2.0 if has_perk("doble") else 1.0), float(d["range"]), d["pierce"]))
 	_fx_shot(origin, ends, d["tracer"], id)

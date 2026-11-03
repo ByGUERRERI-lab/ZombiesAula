@@ -590,17 +590,263 @@ func _build_bola() -> void:
 	game.player.cam.add_child(pala)
 
 
+# Pala de pádel como las de verdad (redonda, 45,5 cm x 26 cm x 3,8 cm):
+#  · cabeza casi circular unida al mango por dos brazos curvos que dejan el hueco del
+#    corazón, todo de una pieza
+#  · caras de carbono con dibujo (textura hecha por código) y rejilla de agujeros
+#  · canto redondeado (varias capas escalonadas) con protector en la parte de arriba
+#  · empuñadura ovalada con overgrip en espiral, tapón y cordón
+# Se hace con CSG: el contorno se extruye y se le restan los agujeros.
+const PALA_GROSOR := 0.038
+const PALA_CY := 0.325          # centro de la cabeza (desde el final del mango)
+const PALA_R := 0.13            # radio de la cabeza
+const PALA_MANGO := 0.135       # largo de la empuñadura
+
 func _pala() -> Node3D:
 	var n := Node3D.new()
-	var cara := U.cylinder(n, 0.2, 0.035, Vector3(0, 0.2, 0), Color(0.08, 0.08, 0.1))
-	cara.rotation_degrees.x = 90.0
-	var borde := U.cylinder(n, 0.205, 0.03, Vector3(0, 0.2, 0), Color(0.95, 0.4, 0.1))
-	borde.rotation_degrees.x = 90.0
-	for k in 3:
-		var f := U.box(n, Vector3(0.3, 0.012, 0.038), Vector3(0, 0.12 + k * 0.08, 0), Color(0.3, 0.3, 0.32))
-		f.rotation_degrees.z = 20.0
-	U.box(n, Vector3(0.035, 0.2, 0.03), Vector3(0, -0.07, 0), Color(0.06, 0.06, 0.06))
+	var raiz := Node3D.new()
+	raiz.position.y = -0.145        # el mango queda donde estaba el de la pala vieja
+	n.add_child(raiz)
+	var cara_m := StandardMaterial3D.new()
+	cara_m.albedo_texture = _tex_cara()
+	cara_m.uv1_triplanar = true      # proyección plana sobre las caras (eje Z)
+	cara_m.uv1_scale = Vector3(1.0 / 0.3, 1.0 / 0.3, 1.0)
+	cara_m.uv1_offset = Vector3(0.5, 0.5 - (PALA_CY - 0.145) / 0.3, 0.0)
+	cara_m.metallic = 0.25
+	cara_m.roughness = 0.32
+	cara_m.clearcoat_enabled = true
+	cara_m.clearcoat = 0.6
+	var canto_m := StandardMaterial3D.new()
+	canto_m.albedo_color = Color(0.06, 0.06, 0.07)
+	canto_m.metallic = 0.3
+	canto_m.roughness = 0.3
+	var prot_m := StandardMaterial3D.new()
+	prot_m.albedo_color = Color(0.93, 0.93, 0.95)
+	prot_m.roughness = 0.45
+
+	# --- cuerpo: caras con agujeros y el hueco del corazón ---
+	var cuerpo := CSGCombiner3D.new()
+	raiz.add_child(cuerpo)
+	_capa(cuerpo, _contorno(-0.004), PALA_GROSOR - 0.004, cara_m)
+	for p in _agujeros():
+		var h := CSGCylinder3D.new()
+		h.radius = 0.0062
+		h.height = PALA_GROSOR + 0.02
+		h.sides = 12
+		h.rotation_degrees.x = 90.0
+		h.position = Vector3(p.x, p.y, 0)
+		h.operation = CSGShape3D.OPERATION_SUBTRACTION
+		cuerpo.add_child(h)
+	var cor := CSGPolygon3D.new()
+	cor.polygon = _corazon(0.0)
+	cor.depth = PALA_GROSOR + 0.04
+	cor.position.z = PALA_GROSOR / 2.0 + 0.02
+	cor.operation = CSGShape3D.OPERATION_SUBTRACTION
+	cuerpo.add_child(cor)
+
+	# --- canto redondeado: tres anillos escalonados (más fino cuanto más fuera) ---
+	for k in [[0.0, 0.026], [-0.0025, 0.034], [-0.006, 0.0385]]:
+		var anillo := CSGCombiner3D.new()
+		raiz.add_child(anillo)
+		_capa(anillo, _contorno(k[0]), k[1], canto_m)
+		var hueco := _capa(anillo, _contorno(k[0] - 0.009), k[1] + 0.01, null)
+		hueco.operation = CSGShape3D.OPERATION_SUBTRACTION
+		# el canto también rodea el corazón
+		var ac := _capa(anillo, _corazon(-k[0] + 0.006), k[1], canto_m)
+		ac.operation = CSGShape3D.OPERATION_UNION
+		var hc := _capa(anillo, _corazon(-k[0] - 0.003), k[1] + 0.01, null)
+		hc.operation = CSGShape3D.OPERATION_SUBTRACTION
+
+	# --- protector blanco arriba (de "las diez" a "las dos") ---
+	var prot := CSGCombiner3D.new()
+	raiz.add_child(prot)
+	_capa(prot, _contorno(0.0025), 0.03, prot_m)
+	var ph := _capa(prot, _contorno(-0.006), 0.05, null)
+	ph.operation = CSGShape3D.OPERATION_SUBTRACTION
+	var corte := CSGBox3D.new()
+	corte.size = Vector3(0.5, 0.5, 0.1)
+	corte.position = Vector3(0, PALA_CY - 0.25 + 0.055, 0)
+	corte.operation = CSGShape3D.OPERATION_SUBTRACTION
+	prot.add_child(corte)
+
+	# --- marca en las dos caras ---
+	for lado in [-1.0, 1.0]:
+		var marca := Label3D.new()
+		marca.text = "ZOMBIES"
+		marca.font = load("res://fuentes/BebasNeue-Regular.ttf") if ResourceLoader.exists("res://fuentes/BebasNeue-Regular.ttf") else null
+		marca.font_size = 44
+		marca.pixel_size = 0.00075
+		marca.outline_size = 0
+		marca.modulate = Color(1, 1, 1, 0.95)
+		marca.position = Vector3(0, PALA_CY + 0.098, lado * (PALA_GROSOR / 2.0 + 0.0015))
+		if lado < 0.0:
+			marca.rotation_degrees.y = 180.0
+		raiz.add_child(marca)
+
+	# --- empuñadura ovalada con overgrip, tapón y cordón ---
+	var grip_m := StandardMaterial3D.new()
+	grip_m.albedo_color = Color(0.95, 0.95, 0.93)
+	grip_m.roughness = 0.9
+	var mango := CSGCylinder3D.new()
+	mango.radius = 0.0175
+	mango.height = PALA_MANGO
+	mango.sides = 16
+	mango.position.y = PALA_MANGO / 2.0 + 0.004
+	mango.scale = Vector3(1.0, 1.0, 0.82)
+	mango.material = grip_m
+	raiz.add_child(mango)
+	var raya_m := StandardMaterial3D.new()
+	raya_m.albedo_color = Color(0.72, 0.72, 0.74)
+	raya_m.roughness = 0.9
+	for i in 11:
+		var r := CSGTorus3D.new()
+		r.inner_radius = 0.0168
+		r.outer_radius = 0.0182
+		r.ring_sides = 4
+		r.sides = 16
+		r.position.y = 0.012 + i * 0.0118
+		r.rotation_degrees.z = 12.0
+		r.scale = Vector3(1.0, 1.0, 0.82)
+		r.material = raya_m
+		raiz.add_child(r)
+	var tapon := CSGCylinder3D.new()
+	tapon.radius = 0.0205
+	tapon.height = 0.01
+	tapon.sides = 16
+	tapon.position.y = 0.0
+	tapon.scale = Vector3(1.0, 1.0, 0.85)
+	tapon.material = canto_m
+	raiz.add_child(tapon)
+	var cordon := CSGTorus3D.new()
+	cordon.inner_radius = 0.045
+	cordon.outer_radius = 0.0485
+	cordon.sides = 18
+	cordon.ring_sides = 5
+	cordon.position = Vector3(0, -0.045, 0)
+	cordon.rotation_degrees = Vector3(0, 0, 90)
+	cordon.scale = Vector3(1.0, 1.0, 0.2)
+	cordon.material = canto_m
+	raiz.add_child(cordon)
 	return n
+
+
+func _capa(padre: Node, poly: PackedVector2Array, grosor: float, m: Material) -> CSGPolygon3D:
+	var c := CSGPolygon3D.new()
+	c.polygon = poly
+	c.depth = grosor
+	c.position.z = grosor / 2.0
+	if m != null:
+		c.material = m
+	padre.add_child(c)
+	return c
+
+
+# Contorno de la pala de una pieza: círculo de la cabeza y dos brazos curvos que bajan
+# hasta el mango (crecido "extra" metros hacia fuera)
+static func _contorno(extra: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	var r := PALA_R + extra
+	var c := Vector2(0, PALA_CY)
+	# arco de la cabeza: del lado derecho (abajo) al izquierdo pasando por arriba
+	var a0 := deg_to_rad(-52.0)
+	var a1 := deg_to_rad(232.0)
+	for i in 49:
+		var a := lerpf(a0, a1, float(i) / 48.0)
+		pts.append(c + Vector2(cos(a), sin(a)) * r)
+	# brazo izquierdo: del arco al mango con una curva cóncava (bezier)
+	var p0 := c + Vector2(cos(a1), sin(a1)) * r
+	var p3 := Vector2(-0.021 - extra, PALA_MANGO + 0.004)
+	var t0 := Vector2(-sin(a1), cos(a1))                 # tangente del círculo en a1 (sigue hacia abajo)
+	var p1 := p0 + t0.normalized() * 0.05
+	var p2 := p3 + Vector2(0, 0.045)
+	for i in range(1, 13):
+		pts.append(_bezier(p0, p1, p2, p3, float(i) / 12.0))
+	# abajo del todo, unión con el mango
+	var q0 := Vector2(0.021 + extra, PALA_MANGO + 0.004)
+	var e0 := c + Vector2(cos(a0), sin(a0)) * r
+	var te := Vector2(-sin(a0), cos(a0))                 # tangente en a0 (hacia arriba)
+	var q1 := q0 + Vector2(0, 0.045)
+	var q2 := e0 - te.normalized() * 0.05
+	for i in range(0, 12):
+		pts.append(_bezier(q0, q1, q2, e0, float(i) / 12.0))
+	return pts
+
+
+# Hueco del corazón: triángulo redondeado con la punta hacia el mango
+static func _corazon(extra: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	var arriba := PALA_CY - PALA_R + 0.016 - extra       # el borde de arriba sigue la curva de la cabeza
+	var abajo := PALA_MANGO + 0.042 + extra
+	var ancho := 0.036 - extra
+	for i in 13:
+		var t := float(i) / 12.0
+		var x := lerpf(-ancho, ancho, t)
+		var y := arriba - (1.0 - sqrt(maxf(0.0, 1.0 - pow(x / 0.12, 2.0)))) * 0.12
+		pts.append(Vector2(x, y))
+	# lados curvos hasta la punta redondeada
+	var der := Vector2(ancho, pts[12].y)
+	var izq := Vector2(-ancho, pts[0].y)
+	var punta := Vector2(0, abajo)
+	for i in range(1, 9):
+		var t := float(i) / 8.0
+		pts.append(_bezier(der, der + Vector2(-0.004, -0.02), punta + Vector2(0.012, 0.012), punta, t))
+	for i in range(1, 8):
+		var t := float(i) / 8.0
+		pts.append(_bezier(punta, punta + Vector2(-0.012, 0.012), izq + Vector2(0.004, -0.02), izq, t))
+	pts.reverse()
+	return pts
+
+
+static func _bezier(a: Vector2, b: Vector2, c: Vector2, d: Vector2, t: float) -> Vector2:
+	var u := 1.0 - t
+	return a * u * u * u + b * 3.0 * u * u * t + c * 3.0 * u * t * t + d * t * t * t
+
+
+# Rejilla de agujeros al tresbolillo dentro de la cabeza (como en las palas de verdad)
+static func _agujeros() -> Array:
+	var out := []
+	var paso := 0.0205
+	for fila in range(-6, 7):
+		for col in range(-7, 8):
+			var x := col * paso + (paso * 0.5 if fila % 2 != 0 else 0.0)
+			var y := PALA_CY + 0.012 + fila * paso * 0.87
+			if Vector2(x, y - PALA_CY).length() > PALA_R - 0.03:
+				continue
+			if y < PALA_CY - PALA_R + 0.04:
+				continue
+			out.append(Vector2(x, y))
+	return out
+
+
+# Dibujo de las caras: carbono 3K con un degradado naranja-rojo en diagonal, filo
+# blanco y el "punto dulce" marcado (de -0,15 a 0,15 m en los dos ejes)
+static func _tex_cara() -> ImageTexture:
+	var N := 256
+	var img := Image.create(N, N, false, Image.FORMAT_RGB8)
+	for py in N:
+		for px in N:
+			var x := (float(px) / N - 0.5) * 0.3
+			var y := (0.5 - float(py) / N) * 0.3          # +y hacia arriba
+			# tejido de carbono
+			var bx := ((px / 4) + (py / 4)) % 2
+			var t := float((px if bx == 0 else py) % 4) / 4.0
+			var v := 0.06 + 0.07 * sin(t * PI)
+			var col := Color(v, v, v * 1.1)
+			# franja en diagonal con degradado
+			var d := x * 0.75 + y
+			if d > 0.035 and d < 0.115:
+				var k := (d - 0.035) / 0.08
+				col = Color(1.0, 0.55, 0.05).lerp(Color(0.85, 0.05, 0.1), k)
+				col = col.darkened(0.08 * sin(t * PI))
+			elif absf(d - 0.03) < 0.004 or absf(d - 0.12) < 0.003:
+				col = Color(0.95, 0.95, 0.95)
+			# anillo fino del punto dulce
+			var rr := Vector2(x, y).length()
+			if absf(rr - 0.075) < 0.0018:
+				col = col.lerp(Color(1, 1, 1), 0.6)
+			img.set_pixel(px, py, col)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 func _build_cpu() -> void:
@@ -656,6 +902,8 @@ func _build_ui() -> void:
 	capa.add_child(aviso)
 	ayuda = Label.new()
 	ayuda.text = "WASD moverte · Shift correr · Clic darle a la bola (mira arriba = más al fondo) · Retroceso abandonar"
+	if not Input.get_connected_joypads().is_empty():
+		ayuda.text = "Stick moverte · L3 correr · RT darle a la bola (mira arriba = más al fondo) · Select abandonar"
 	ayuda.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	ayuda.offset_top = -40.0
 	ayuda.offset_left = -500.0

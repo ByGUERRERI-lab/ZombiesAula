@@ -29,6 +29,7 @@ const InvestigaScript = preload("res://scripts/mapas/investigacion.gd")
 const CesurScript = preload("res://scripts/mapas/cesur.gd")
 const CamaraScript = preload("res://scripts/nucleo/camara_libre.gd")
 const BebidasScript = preload("res://scripts/jugador/bebidas.gd")
+const PerroScript = preload("res://scripts/jugador/perro.gd")
 const ConsolaScript = preload("res://scripts/nucleo/consola.gd")
 const PadelScript = preload("res://scripts/mapas/padel.gd")
 const IAN_FIRST := 3        # Ian (minijefe tanque) sale en la oleada 3...
@@ -86,6 +87,7 @@ var target_t := 0.0
 var coop_over := false
 var revive_t := 0.0
 var bebidas                # bebidas.gd: máquinas de bebidas con habilidades
+var perro            # el perro acompañante (perro.gd)
 var consola                # consola.gd: comandos de prueba (º o F1)
 var padel                  # padel.gd: partido de pádel contra Víctor en el patio
 var box_owner := 1
@@ -197,6 +199,13 @@ func _ready() -> void:
 		js.global_position = Vector3(U.CASINO_WX - 0.6, 0.0, 58.0)
 		js.zona = Rect2(22.2, 49.0, 5.8, 20.8)      # se activa al entrar en el tramo norte del pasillo largo
 	_build_hud()
+	if Net.mode != "versus":
+		perro = PerroScript.new()
+		perro.name = "Perro"
+		perro.game = self
+		perro.player = player
+		add_child(perro)
+		perro.global_position = player.global_position + player.global_transform.basis.z * 1.5
 	bebidas = BebidasScript.new()
 	bebidas.name = "Bebidas"
 	bebidas.game = self
@@ -1197,6 +1206,8 @@ func _prompt_for(it) -> String:
 			return bebidas.prompt(it)
 		"padel":
 			return padel.prompt()
+		"perro":
+			return "[E] Acariciar a Mac"
 	return ""
 
 
@@ -1270,6 +1281,8 @@ func _interact(it) -> void:
 			bebidas.comprar(it)
 		"padel":
 			padel.empezar()
+		"perro":
+			perro.acariciar()
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -1468,6 +1481,9 @@ func _build_shop() -> void:
 	_wall_buy("subfusil", Vector3(8.97, 1.7, 3.0), -90.0, Vector3(8.0, 0, 3.0))
 	_wall_buy("fusil", Vector3(15.15, 1.7, 23.03), 0.0, Vector3(15.15, 0, 23.8))
 	_wall_buy("francotirador", Vector3(-11.97, 1.9, 82.0), 90.0, Vector3(-11.2, 0, 82.0))
+	_wall_buy("revolver", Vector3(8.97, 1.7, -3.0), -90.0, Vector3(8.0, 0, -3.0))
+	_wall_buy("uzi", Vector3(12.0, 1.7, 23.03), 0.0, Vector3(12.0, 0, 23.8))
+	_wall_buy("escopeta", Vector3(6.43, 1.7, 36.0), 90.0, Vector3(7.3, 0, 36.0))
 	_build_box()
 
 
@@ -1903,10 +1919,11 @@ func _open_code() -> void:
 	code_open = true
 	player.input_blocked = true
 	code_layer.visible = true
-	_code_refresh(CODE_HELP, Color(0.8, 0.8, 0.85))
+	_code_refresh(CODE_HELP if Input.get_connected_joypads().is_empty() else CODE_HELP_MANDO, Color(0.8, 0.8, 0.85))
 
 
 const CODE_HELP := "Escribe el código de 4 cifras\nRetroceso borrar · Esc salir"
+const CODE_HELP_MANDO := "Mando: cruceta ↑↓ elegir número · A meterlo\nB borrar · Start salir"
 
 
 func _close_code() -> void:

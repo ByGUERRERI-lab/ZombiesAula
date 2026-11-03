@@ -222,7 +222,10 @@ void fragment() {
 	msg_lbl = _lbl(col, "", 22, Color(1, 1, 1), font_num, 6)
 	msg_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var keys := {"slots": "[Espacio] jugar      ·      ", "ruleta": "[Espacio] jugar      ·      ", "quiz": "[1] / [2] responder      ·      "}
-	var foot := _lbl(col, keys.get(mode, "") + "[E] / [Esc] salir", 15, Color(1, 1, 1, 0.5), font_ui, 0)
+	var pie: String = keys.get(mode, "") + "[E] / [Esc] salir"
+	if not Input.get_connected_joypads().is_empty():
+		pie = "Mando: cruceta elegir  ·  A aceptar  ·  B salir"
+	var foot := _lbl(col, pie, 15, Color(1, 1, 1, 0.5), font_ui, 0)
 	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 	snd_tick = _snd(U.make_beep(1500.0), -14.0)

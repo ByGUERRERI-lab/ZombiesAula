@@ -25,6 +25,7 @@ general/text_to_speech=true
 [autoload]
 
 Net="*res://scripts/nucleo/net.gd"
+Mando="*res://scripts/nucleo/mando.gd"
 
 [display]
 

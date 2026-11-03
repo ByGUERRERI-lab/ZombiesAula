@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b41gpxys3vxvu"
-path="res://.godot/imported/maquina_bebidas_6.png-b287b8459868ceb92bca039614954f90.ctex"
+path.s3tc="res://.godot/imported/maquina_bebidas_6.png-b287b8459868ceb92bca039614954f90.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "2507a292a2bc56a2267b3b28edaf878a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://modelos/mapa/maquina_bebidas_6.png"
-dest_files=["res://.godot/imported/maquina_bebidas_6.png-b287b8459868ceb92bca039614954f90.ctex"]
+dest_files=["res://.godot/imported/maquina_bebidas_6.png-b287b8459868ceb92bca039614954f90.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +41,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

@@ -76,12 +76,12 @@ func _ready() -> void:
 	rec_lbl.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	rec_lbl.offset_left = -250.0
 	rec_lbl.offset_right = 250.0
-	rec_lbl.offset_top = 70.0
+	rec_lbl.offset_top = 12.0
 	rec_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	rec_lbl.add_theme_font_size_override("font_size", 26)
-	rec_lbl.add_theme_color_override("font_color", Color(1.0, 0.2, 0.15))
-	rec_lbl.add_theme_constant_override("outline_size", 6)
-	rec_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	rec_lbl.add_theme_font_size_override("font_size", 13)
+	rec_lbl.add_theme_color_override("font_color", Color(1.0, 0.3, 0.25, 0.85))
+	rec_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	rec_lbl.add_theme_constant_override("shadow_outline_size", 5)
 	layer.add_child(rec_lbl)
 	net_pos = global_position
 
@@ -175,7 +175,7 @@ func _rec_hud() -> void:
 		and U.region(global_position) == U.region(p.global_position)
 	if on:
 		var blink := fmod(Time.get_ticks_msec() / 500.0, 2.0) < 1.3
-		rec_lbl.text = ("●  REC" if blink else "     REC") + "\nXavier te está grabando"
+		rec_lbl.text = ("●  REC" if blink else "     REC") + "  ·  Xavier te está grabando"
 	else:
 		rec_lbl.text = ""
 

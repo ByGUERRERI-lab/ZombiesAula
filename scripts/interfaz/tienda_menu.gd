@@ -88,7 +88,10 @@ void fragment() {
 		i += 1
 		_card(row, id, i)
 
-	var foot := _lbl(col, "[1] [2] [3]  comprar      ·      [E] / [Esc]  salir", 15, Color(1, 1, 1, 0.55), font_ui, 0)
+	var pie := "[1] [2] [3]  comprar      ·      [E] / [Esc]  salir"
+	if not Input.get_connected_joypads().is_empty():
+		pie = "Mando: cruceta elegir  ·  A comprar  ·  B salir"
+	var foot := _lbl(col, pie, 15, Color(1, 1, 1, 0.55), font_ui, 0)
 	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 	snd_buy = AudioStreamPlayer.new()

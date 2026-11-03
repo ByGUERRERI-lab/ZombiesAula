@@ -180,6 +180,9 @@ func _mojacar() -> void:
 	game._wall_buy("subfusil", Vector3(-8.47, 1.7, -26.0), 90.0, Vector3(-7.6, 0, -26.0))
 	game._wall_buy("fusil", Vector3(-8.47, 1.7, 26.6), 90.0, Vector3(-7.6, 0, 26.6))
 	game._wall_buy("francotirador", Vector3(5.0, 1.9, 75.38), 180.0, Vector3(5.0, 0, 74.2))
+	game._wall_buy("revolver", Vector3(1.5, 1.7, 75.38), 180.0, Vector3(1.5, 0, 74.2))
+	game._wall_buy("uzi", Vector3(-8.47, 1.7, 30.1), 90.0, Vector3(-7.6, 0, 30.1))
+	game._wall_buy("escopeta", Vector3(8.5, 1.7, 75.38), 180.0, Vector3(8.5, 0, 74.2))
 
 
 # Una manzana de casas blancas entre z0 y z1: [rótulo de la tienda, color]
@@ -658,6 +661,9 @@ func _indalo() -> void:
 	game._wall_buy("subfusil", Vector3(-25.97, 1.7, -6.5), 90.0, Vector3(-25.0, 0, -6.5))
 	game._wall_buy("fusil", Vector3(19.0, 1.7, 6.97), 180.0, Vector3(19.0, 0, 6.1))
 	game._wall_buy("francotirador", Vector3(36.0, 1.9, 40.58), 180.0, Vector3(36.0, 0, 39.3))
+	game._wall_buy("revolver", Vector3(-25.97, 1.7, -3.0), 90.0, Vector3(-25.0, 0, -3.0))
+	game._wall_buy("uzi", Vector3(39.5, 1.7, 40.58), 180.0, Vector3(39.5, 0, 39.3))
+	game._wall_buy("escopeta", Vector3(32.5, 1.7, 40.58), 180.0, Vector3(32.5, 0, 39.3))
 
 
 func _recepcion() -> void:

@@ -12,8 +12,16 @@ extends "res://scripts/mapas/mission.gd"
 #     Si fallas, vuelve al "!" y repítela.
 #  2. Con todas, aparece la puerta del aula donde no debería haber ninguna puerta.
 #  3. La cruzas... y apareces en el siguiente sitio del bucle.
+# En MOJÁCAR es distinto: en la playa está JORGE (cerdo.gd), un cerdo muerto de
+# hambre. Los zombis que matas sueltan comida: cógela (llevas 3 como mucho) y dásela: cuanto
+# más come, más engorda... y cuando ha comido COMIDA_TOTAL, revienta y te vas.
 # Usa la interfaz y los sonidos de mission.gd; los sitios y los textos vienen de mapas.gd.
 
+const CerdoScript = preload("res://scripts/mapas/cerdo.gd")
+const COMIDA_TOTAL := 10     # lo que tiene que comer el cerdo para reventar
+const LLEVAR_MAX := 3        # comida que puedes llevar a la vez
+const COMIDA_VIDA := 30.0    # segundos que dura en el suelo la comida que suelta un zombi
+const COMIDA_PROB := 0.6     # probabilidad de que un zombi suelte comida (si no hay nada en el suelo, siempre)
 const NEAR_MARK := 16.0      # a qué distancia se ve el "!" de una prueba
 const READ_TIME := 9.0       # segundos que se queda el texto al superar una prueba
 
@@ -61,6 +69,13 @@ var big_lbl: Label           # flechas y avisos grandes en el centro
 var snd_ok: AudioStreamPlayer
 var snd_mal: AudioStreamPlayer
 var snd_tonos: Array = []
+# modo cerdo (Mojácar)
+var modo_cerdo := false
+var cerdo: Node3D
+var comidas := {}            # id -> {nodo, pos, tipo, vida}: la comida que han soltado los zombis
+var n_soltadas := 0
+var llevas: Array = []       # tipos de comida que llevas encima
+var comido := 0
 
 
 func _ready() -> void:
@@ -69,6 +84,9 @@ func _ready() -> void:
 	_build_sounds()
 	_build_reader()
 	_build_reto_ui()
+	if mapa.cerdo_pos != Vector3.ZERO:
+		_cerdo_preparar()
+		return
 	var i := 0
 	for p in mapa.pistas:
 		found[p[0]] = false
@@ -110,7 +128,9 @@ func _process(delta: float) -> void:
 	e_prev = e_now
 	prompt.text = ""
 	bar.visible = false
-	if stage == 0:
+	if stage == 0 and modo_cerdo:
+		_cerdo_update(delta, e_down)
+	elif stage == 0:
 		if reto != "":
 			_reto_update(delta)
 		else:
@@ -121,7 +141,7 @@ func _process(delta: float) -> void:
 					if e_down:
 						_empezar(p)
 					break
-	elif stage == 1:
+	elif stage == 1 and not modo_cerdo:
 		if _dist(mapa.puerta_pos) < 2.2:
 			prompt.text = "Mantén [E] para abrir la puerta del aula"
 			if e_now:
@@ -138,6 +158,9 @@ func _process(delta: float) -> void:
 
 
 func _update_inv() -> void:
+	if modo_cerdo:
+		_cerdo_inv()
+		return
 	var s := "¿DÓNDE ESTÁS?\n%s\n" % mapa.titulo
 	var n := 0
 	var nearest := INF
@@ -611,6 +634,14 @@ func _net_inv(what: String, id: String) -> void:
 		"salir":
 			if stage == 1:
 				_leave()
+		"comer":
+			if modo_cerdo and stage == 0:
+				_cerdo_come(id)
+		"soltar":
+			if modo_cerdo and stage == 0:
+				_comida_aparece(id)
+		"cogida":
+			_comida_quitar(id)
 
 
 func _found(id: String) -> void:
@@ -667,8 +698,9 @@ func _leave() -> void:
 	game.spawn_left = 0
 	for z in get_tree().get_nodes_in_group("zombies"):
 		z.queue_free()
-	var hoja: Node3D = door.get_node("Hoja")
-	hoja.create_tween().tween_property(hoja, "rotation_degrees:y", -100.0, 1.2).set_trans(Tween.TRANS_SINE)
+	if not modo_cerdo:
+		var hoja: Node3D = door.get_node("Hoja")
+		hoja.create_tween().tween_property(hoja, "rotation_degrees:y", -100.0, 1.2).set_trans(Tween.TRANS_SINE)
 	snd_hum = AudioStreamPlayer.new()
 	snd_hum.stream = MapasScript.zumbido()
 	snd_hum.volume_db = -10.0
@@ -858,3 +890,191 @@ class Diana extends Node3D:
 		tw.tween_property(disco, "scale", Vector3.ONE * 1.3, 0.06)
 		tw.tween_property(disco, "scale", Vector3.ZERO, 0.12)
 		tw.tween_callback(queue_free)
+
+
+# =============================================================
+# Mojácar: Jorge, el cerdo glotón
+# =============================================================
+func _cerdo_preparar() -> void:
+	modo_cerdo = true
+	cerdo = CerdoScript.new()
+	cerdo.position = mapa.cerdo_pos
+	cerdo.rotation_degrees.y = mapa.cerdo_yaw
+	add_child(cerdo)
+	cerdo.reventado.connect(_cerdo_bum)
+	markers["cerdo"] = _marker(mapa.cerdo_pos + Vector3(0, 4.2, 0), Color(1.0, 0.6, 0.7), "JORGE")
+	brief.text = mapa.intro.replace("Investiga.", "") + "\nEn la playa hay un cerdo enorme muerto de hambre. Mata zombis: sueltan comida.\nLlévasela: cuanto más coma, más se hincha... A ver qué pasa si revienta."
+	brief.add_theme_color_override("font_color", Color(0.95, 0.92, 0.8))
+	var tw := create_tween()
+	tw.tween_interval(9.0)
+	tw.tween_property(brief, "modulate:a", 0.0, 1.2)
+
+
+# main.gd (en el anfitrión) avisa de cada zombi muerto: a veces suelta comida
+func soltar_comida(pos: Vector3) -> void:
+	if not modo_cerdo or stage != 0 or not Net.is_host():
+		return
+	if not comidas.is_empty() and randf() > COMIDA_PROB:
+		return
+	n_soltadas += 1
+	var p := U.clamp_pos(pos, 0.5)
+	var tipo: String = CerdoScript.TIPOS[randi() % CerdoScript.TIPOS.size()]
+	_send_inv("soltar", "%d|%s|%f|%f" % [n_soltadas, tipo, p.x, p.z])
+
+
+func _comida_aparece(id: String) -> void:
+	var pt := id.split("|")
+	if pt.size() < 4 or comidas.has(pt[0]):
+		return
+	var p := Vector3(float(pt[2]), 0.0, float(pt[3]))
+	var n := _comida_nodo(pt[1], p)
+	comidas[pt[0]] = {"nodo": n, "pos": p, "tipo": pt[1], "vida": COMIDA_VIDA}
+	# sale disparada del zombi y cae al suelo
+	var y: float = n.position.y
+	n.position.y = 1.2
+	var tw := n.create_tween()
+	tw.tween_property(n, "position:y", 2.2, 0.25).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tw.tween_property(n, "position:y", y, 0.45).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BOUNCE)
+
+
+func _comida_quitar(id: String) -> void:
+	if not comidas.has(id):
+		return
+	var n: Node3D = comidas[id]["nodo"]
+	comidas.erase(id)
+	var tw := n.create_tween()
+	tw.tween_property(n, "scale", Vector3.ONE * 0.01, 0.15)
+	tw.tween_callback(n.queue_free)
+
+
+# La comida: gira, flota y tiene una lucecita
+func _comida_nodo(tipo: String, p: Vector3) -> Node3D:
+	var n := Node3D.new()
+	n.position = p + Vector3(0, 0.8, 0)
+	n.set_meta("y", n.position.y)
+	add_child(n)
+	var c := CerdoScript.comida(tipo)
+	c.scale = Vector3.ONE * 1.8
+	n.add_child(c)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.75, 0.5)
+	l.light_energy = 0.8
+	l.omni_range = 2.5
+	n.add_child(l)
+	var m := _marker(Vector3(0, 0.75, 0), Color(1.0, 0.85, 0.4), "COMIDA")
+	remove_child(m)
+	n.add_child(m)
+	n.set_meta("marca", m)
+	return n
+
+
+func _cerdo_frente() -> Vector3:
+	return mapa.cerdo_pos + cerdo.global_transform.basis.z * 1.6
+
+
+func _cerdo_update(delta: float, e_down: bool) -> void:
+	# coger comida (basta con pasar por encima)
+	for id in comidas.keys():
+		var c: Dictionary = comidas[id]
+		var n: Node3D = c["nodo"]
+		n.rotation.y += 1.4 * delta
+		c["vida"] -= delta
+		var d := _dist(c["pos"])
+		var m: Label3D = n.get_meta("marca")
+		m.visible = d < 30.0
+		if m.visible:
+			m.text = "COMIDA\n%d m" % int(d)
+		if c["vida"] < 5.0:                      # parpadea antes de desaparecer
+			n.visible = fmod(c["vida"], 0.3) > 0.12
+		if c["vida"] <= 0.0:
+			_comida_quitar(id)
+			continue
+		if d < 1.6 and llevas.size() < LLEVAR_MAX and not player.dead and not player.downed:
+			llevas.append(c["tipo"])
+			_comida_quitar(id)
+			_send_inv("cogida", id)
+			snd_pick.play()
+			if llevas.size() == LLEVAR_MAX:
+				_say("Llevas todo lo que puedes (%d). ¡A darle de comer a Jorge!" % LLEVAR_MAX, Color(1.0, 0.8, 0.5))
+	# darle de comer
+	var cerca := _dist(_cerdo_frente()) < 2.6 or _dist(mapa.cerdo_pos) < 2.4
+	cerdo.boca_abierta = llevas.size() > 0 and _dist(mapa.cerdo_pos) < 7.0
+	if cerca:
+		if llevas.is_empty():
+			prompt.text = "Jorge tiene hambre. Mata zombis: sueltan comida"
+		else:
+			prompt.text = "[E] Darle de comer a Jorge  ·  llevas %d" % llevas.size()
+			if e_down and not cerdo.reventando:
+				var tipo: String = llevas.pop_back()
+				var desde: Vector3 = player.cam.global_position + (-player.cam.global_transform.basis.z) * 0.6 + Vector3(0, -0.25, 0)
+				_send_inv("comer", "%s|%f|%f|%f" % [tipo, desde.x, desde.y, desde.z])
+
+
+func _cerdo_come(id: String) -> void:
+	var partes := id.split("|")
+	var tipo := partes[0]
+	var desde := _cerdo_frente() + Vector3(0, 1.4, 0)
+	if partes.size() == 4:
+		desde = Vector3(float(partes[1]), float(partes[2]), float(partes[3]))
+	comido += 1
+	cerdo.comer(tipo, comido, COMIDA_TOTAL, desde)
+	if comido >= COMIDA_TOTAL:
+		stage = 1
+		prompt.text = ""
+		_say("¡¡Jorge no puede más!! ¡Apártate!", Color(1.0, 0.5, 0.55))
+		get_tree().create_timer(1.2).timeout.connect(cerdo.reventar)
+	elif comido == COMIDA_TOTAL - 2:
+		_say("Está a punto de reventar...", Color(1.0, 0.7, 0.6))
+
+
+func _cerdo_bum() -> void:
+	snd_boom.play()
+	shake = 1.6
+	var fl := create_tween()
+	fl.tween_property(flash, "color", Color(1.0, 0.75, 0.8, 0.85), 0.06)
+	fl.tween_property(flash, "color:a", 0.0, 1.0)
+	markers["cerdo"].visible = false
+	var luz := OmniLight3D.new()
+	luz.light_color = Color(1.0, 0.7, 0.75)
+	luz.light_energy = 10.0
+	luz.omni_range = 18.0
+	luz.position = mapa.cerdo_pos + Vector3(0, 2.0, 0)
+	add_child(luz)
+	luz.create_tween().tween_property(luz, "light_energy", 0.0, 2.5)
+	# la onda expansiva se lleva por delante a los zombis de alrededor
+	if Net.is_host():
+		for z in get_tree().get_nodes_in_group("zombies"):
+			var d: Vector3 = z.global_position - mapa.cerdo_pos
+			if not z.dying and d.length() < 12.0:
+				game.damage_enemy(z, 99999.0, d.normalized())
+	_say("¡¡BUUUM!!\nJorge ha reventado. Llueve sandía... y el aire huele a tiza.", Color(1.0, 0.75, 0.8))
+	get_tree().create_timer(4.0).timeout.connect(_leave)
+
+
+func _cerdo_inv() -> void:
+	var s := "¿DÓNDE ESTÁS?\n%s\n" % mapa.titulo
+	if stage == 0:
+		s += "○  Dale de comer a Jorge: %d / %d\n" % [comido, COMIDA_TOTAL]
+		if llevas.is_empty():
+			var mejor := INF
+			for c in comidas.values():
+				mejor = minf(mejor, _dist(c["pos"]))
+			s += ("     hay comida a %d m" % int(mejor)) if mejor < INF else "     mata zombis: sueltan comida"
+		else:
+			s += "     llevas %d / %d · Jorge está a %d m" % [llevas.size(), LLEVAR_MAX, int(_dist(mapa.cerdo_pos))]
+	else:
+		s += "✔  Jorge ha reventado"
+	obj_lbl.text = s
+	var mk: Label3D = markers["cerdo"]
+	if mk.visible:
+		mk.text = "JORGE\n%d / %d  ·  %d m" % [comido, COMIDA_TOTAL, int(_dist(mapa.cerdo_pos))]
+		mk.position.y = 4.2 + cerdo.gordura * 0.8
+
+
+# consola: "cerdo" le da de comer una vez, "cerdo reventar" lo llena del todo
+func cerdo_debug(todo: bool) -> void:
+	if not modo_cerdo or stage != 0:
+		return
+	var n := COMIDA_TOTAL - comido if todo else 1
+	for i in n:
+		_send_inv("comer", CerdoScript.TIPOS[randi() % CerdoScript.TIPOS.size()])

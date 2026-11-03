@@ -978,6 +978,20 @@ func lose_perks() -> void:
 	_recalc_vida()
 
 
+# Jesús te ha hackeado (hackeo.gd): te deja con la pistola y sin nada más
+func hackeado() -> void:
+	if not is_local:
+		return
+	game.points = 0
+	lose_perks()
+	jan_count = 0
+	slots[0] = _new_weapon("pistola")
+	for i in range(1, 2):
+		slots[i] = null
+	reload_t = 0.0
+	_select(0, true)
+
+
 # ---------------- Víctor te roba ----------------
 # Se decide en el PC del jugador, que es el que sabe lo que lleva encima
 func rob() -> void:

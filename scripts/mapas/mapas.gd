@@ -30,6 +30,8 @@ var pistas: Array = []          # [id, nombre, texto, posición]
 var puerta_pos := Vector3.ZERO  # la puerta del aula que aparece al final
 var puerta_yaw := 0.0
 var salida: Array = []          # frases al cruzar la puerta
+var cerdo_pos := Vector3.ZERO   # si hay cerdo (Mojácar): se sale dándole de comer hasta que revienta
+var cerdo_yaw := 0.0
 var sky: Sky
 var sun: DirectionalLight3D
 var sea_mat: StandardMaterial3D
@@ -166,6 +168,10 @@ func _mojacar() -> void:
 	puerta_pos = Vector3(-8.45, 0.0, 48.25)
 	puerta_yaw = 90.0
 	salida = ["Entras en el Hotel Pueblo Indalo...", "...y en recepción huele a tiza.", "Otro sitio que no conoces."]
+	# Jorge, el cerdo glotón, en su toalla delante de la bajada a la playa
+	cerdo_pos = Vector3(16.8, 0.0, 14.0)
+	cerdo_yaw = -90.0                       # mirando al paseo
+	salida = ["Jorge ha reventado... y donde estaba sale un pasillo de luz blanca.", "Huele a sandía y a tiza. Lo cruzas.", "Otro sitio que no conoces."]
 	game.box_spots = [
 		[Vector3(8.5, 0.0, -14.0), 90.0, "el paseo marítimo"],
 		[Vector3(-14.0, 0.0, 9.5), 0.0, "el aparcamiento"],

@@ -30,6 +30,8 @@ const AYUDA := """[color=#9be05a]COMANDOS[/color]
   [b]curar[/b]                          vida llena
   [b]pruebas[/b]                        supera todas las pruebas del mapa (Mojácar / Indalo)
   [b]prueba[/b] 2                       te lleva delante de la prueba número 2
+  [b]hackeo[/b]                         Jesús te hackea (la terminal de defensa de la oleada 10)
+  [b]cerdo[/b] | [b]cerdo ir[/b] | [b]cerdo reventar[/b]   Mojácar: darle de comer a Jorge el cerdo · ir a él · que reviente
   [b]padel[/b]                          empieza un partido de pádel contra Víctor (en CESUR)
   [b]reiniciar[/b]                      vuelve a empezar este mapa
   [b]limpiar[/b]                        borra la consola"""
@@ -314,6 +316,29 @@ func _ejecutar(texto: String) -> void:
 			else:
 				pl.global_position = pos + Vector3(0, 0.05, 1.5)
 			_ok("%d. %s (prueba de %s)" % [k + 1, lista[k][1], mi2.tipo.get(lista[k][0], "?")])
+		"hackeo", "jesus", "jesús":
+			if game.hacking:
+				_error("Jesús ya te está hackeando")
+				return
+			cerrar()
+			game.add_child(load("res://scripts/interfaz/hackeo.gd").new())
+		"cerdo", "jorge":
+			var mi3 = game.mission
+			if mi3 == null or not ("modo_cerdo" in mi3) or not mi3.modo_cerdo:
+				_error("Jorge está en Mojácar (mapa mojacar)")
+				return
+			if arg == "ir":
+				var cp: Vector3 = mi3._cerdo_frente()
+				if game.camara.activa:
+					game.camara._ir(cp + Vector3(0, 1.7, 0) + mi3.cerdo.global_transform.basis.z * 3.0, 0.0, 0.0)
+				else:
+					pl.global_position = cp + mi3.cerdo.global_transform.basis.z * 2.0 + Vector3(0, 0.05, 0)
+					var hacia: Vector3 = mi3.cerdo.global_transform.basis.z
+					pl.rotation.y = atan2(hacia.x, hacia.z)            # mirándolo
+				_ok("Delante de Jorge")
+				return
+			mi3.cerdo_debug(arg == "reventar")
+			_ok("Jorge: %d / %d" % [mi3.comido + (mi3.COMIDA_TOTAL - mi3.comido if arg == "reventar" else 1), mi3.COMIDA_TOTAL])
 		"padel", "pádel":
 			if game.padel == null:
 				_error("La pista de pádel está en el patio de CESUR")

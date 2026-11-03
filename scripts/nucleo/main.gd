@@ -334,6 +334,9 @@ func zombie_killed(z = null) -> void:
 	_give_points(attacker, 0, 1)
 	if Net.online and z != null:
 		_net_enemy_dead.rpc(z.name)
+	# Mojácar: los zombis sueltan comida para Jorge, el cerdo
+	if z != null and mission != null and mission.has_method("soltar_comida"):
+		mission.soltar_comida(z.global_position)
 	# la última Isabella de la ronda suelta una Munición Máxima
 	var last_isabella: bool = z != null and z.get_script() == IsabellaScript and spawn_left == 0 \
 			and get_tree().get_nodes_in_group("isabellas").is_empty()
